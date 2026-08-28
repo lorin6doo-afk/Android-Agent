@@ -1,4 +1,4 @@
-# Android Agent — načrt in študija izvedljivosti
+# Sopotnik — načrt in študija izvedljivosti
 
 > **Status: predlog za skupno razpravo** (v1, 28. 8. 2026). Nič od spodnjega še ni implementirano — ta dokument je podlaga, da se najprej uskladiva o arhitekturi, obsegu MVP in odprtih vprašanjih (razdelek 10).
 
@@ -7,6 +7,8 @@
 ## 1. Cilj in vizija
 
 Zasebna Android aplikacija — **osebni AI pomočnik, voice-first**, uporaben tudi v avtu in (kolikor Android dovoljuje) ob zaklenjenem telefonu.
+
+Aplikacija se imenuje **Sopotnik**, pomočnik pa se predstavlja in odziva na klicno ime **Sven** (lokalna gramatika dopušča neobvezno predpono »Sven, …« pred ukazom; repozitorij ostaja Android-Agent).
 
 **Delitev odgovornosti:**
 
@@ -356,6 +358,6 @@ Odgovori na odprta vprašanja iz razprave:
 | STT/TTS | **Google brezplačno**, go/no-go test v fazi 0 | 0 €; nadgradnja na plačljiv Whisper/TTS API le, če slovenščina ne zadošča |
 | Sivo območje Codexa | **sprejeto** | izključno uradne poti, osebna raba, `AiProvider` rezerva na API ključ |
 | Jezik interakcije | **samo slovenščina** | ena lokalna gramatika, STT fiksno sl-SI |
-| Ime aplikacije | **v izbiri** (predlogi podani) | repozitorij ostane Android-Agent do odločitve |
+| Ime aplikacije | **Sopotnik**, klicno ime asistenta **Sven** | ime v UI, pozdravu in lokalni gramatiki; repozitorij ostane Android-Agent |
 
-**Še odprto:** točen model telefona (potreben za fazo 0) in končno ime aplikacije.
+**Še odprto:** točen model telefona (potreben za fazo 0).
