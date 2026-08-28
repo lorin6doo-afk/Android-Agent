@@ -292,6 +292,7 @@ Dodatna pravila:
 
 ### Faza 0 — preverba temeljev (prototip, ~nekaj dni)
 - na **ciljnem telefonu**: kakovost sl-SI STT (`SpeechRecognizer`, streaming) in TTS glasu; preverba on-device STT paketa (`checkRecognitionSupport`) in sl-SI TTS glasu,
+- Xiaomi/HyperOS specifično: nastavitev autostarta in izjem baterije ter preverba, da foreground service preživi zaklep zaslona,
 - backend: Codex OAuth prijava + prvi programatski klic; meritev latence konec-govora → prvi-zvok,
 - **go/no-go odločitve**: STT/TTS pot za MVP, sprejemljivost latence AI poti.
 
@@ -342,13 +343,19 @@ Dodatna pravila:
 
 ---
 
-## 10. Odprta vprašanja za skupno odločitev
+## 10. Sprejete odločitve (28. 8. 2026)
 
-1. **Kje bo tekel backend?** Potrebuje napravo, ki teče 24/7 z nameščenim Codex CLI. Moj predlog: **mini PC / Raspberry Pi / star laptop doma + Tailscale** (backend sploh ni izpostavljen internetu). Alternativa: mali VPS (~5 €/mesec), a potem poverilnice živijo v oblaku. Imaš kaj primernega doma?
-2. **Katero ChatGPT naročnino imaš (Plus ali Pro)?** Plus ima od 25. 8. 2026 spet 5-urno okno porabe, ki si ga deliš z lastno rabo ChatGPT/Codexa — pri Plus bo treba biti varčen (luna model, lokalni fast-path), pri Pro je prostora bistveno več.
-3. **Kateri telefon je ciljni (znamka/model, verzija Androida)?** Od tega so odvisni testi faze 0 (slovenski STT/TTS na napravi) in faze 3 (asistentska gesta — npr. Samsung preusmerja stranski gumb na Bixby, kar zahteva ročno prenastavitev).
-4. **Avto:** samo Bluetooth zvok ali tudi Android Auto? (Na zaslon avta ne moremo, zvok pa gre skozi BT v obeh primerih; za samodejno prebujenje rabim potrditev, da se telefon poveže z avtom prek BT.)
-5. **STT/TTS začetek:** predlagam start z brezplačnim Googlovim STT + sistemskim TTS in odločitev po testu v fazi 0; če slovenščina ne bo zadovoljiva, dodava OpenAI API ključ (~nekaj € / mesec). Se strinjaš s tem vrstnim redom?
-6. **Sivo območje Codexa:** ali sprejmeš opisano tveganje (osebna ne-kodirna raba prek uradnih poti, z API-key rezervo), kot je utemeljeno v 3.3?
-7. **Jezik interakcije:** samo slovenščina, ali naj lokalna gramatika in pomočnik razumeta tudi angleške ukaze?
-8. *(neobvezno)* **Ime aplikacije** — trenutno delovno »Android Agent«.
+Odgovori na odprta vprašanja iz razprave:
+
+| Vprašanje | Odločitev | Posledica za načrt |
+|---|---|---|
+| Kje teče backend | **naprava doma + Tailscale** | backend ni izpostavljen internetu; Codex CLI + gateway na domači napravi 24/7 |
+| ChatGPT naročnina | **Pro** | limiti niso ozko grlo (Pro trenutno izvzet iz 5-urnega okna); *luna* ostane privzeti model zaradi latence, ne varčevanja |
+| Ciljni telefon | **Xiaomi / POCO / Redmi** (točen model še sporočiš) | HyperOS agresivno ubija ozadje → onboarding mora vključiti autostart + izjeme baterije; asistentska vloga in CDM sprožilec se preverita na napravi (faze 0/3/4) |
+| Avto | **samo Bluetooth zvok** (brez Android Auto) | najčistejši scenarij: CDM prebujenje + zvok prek BT; omejitve Android Auto v celoti odpadejo |
+| STT/TTS | **Google brezplačno**, go/no-go test v fazi 0 | 0 €; nadgradnja na plačljiv Whisper/TTS API le, če slovenščina ne zadošča |
+| Sivo območje Codexa | **sprejeto** | izključno uradne poti, osebna raba, `AiProvider` rezerva na API ključ |
+| Jezik interakcije | **samo slovenščina** | ena lokalna gramatika, STT fiksno sl-SI |
+| Ime aplikacije | **v izbiri** (predlogi podani) | repozitorij ostane Android-Agent do odločitve |
+
+**Še odprto:** točen model telefona (potreben za fazo 0) in končno ime aplikacije.
