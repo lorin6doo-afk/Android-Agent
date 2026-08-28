@@ -353,11 +353,11 @@ Odgovori na odprta vprašanja iz razprave:
 |---|---|---|
 | Kje teče backend | **naprava doma + Tailscale** | backend ni izpostavljen internetu; Codex CLI + gateway na domači napravi 24/7 |
 | ChatGPT naročnina | **Pro** | limiti niso ozko grlo (Pro trenutno izvzet iz 5-urnega okna); *luna* ostane privzeti model zaradi latence, ne varčevanja |
-| Ciljni telefon | **Xiaomi / POCO / Redmi** (točen model še sporočiš) | HyperOS agresivno ubija ozadje → onboarding mora vključiti autostart + izjeme baterije; asistentska vloga in CDM sprožilec se preverita na napravi (faze 0/3/4) |
+| Ciljni telefon | **Xiaomi 14 Pro** (HyperOS) | HyperOS agresivno ubija ozadje → onboarding mora vključiti autostart + izjeme baterije; asistentska vloga in CDM sprožilec se preverita na napravi (faze 0/3/4) |
 | Avto | **samo Bluetooth zvok** (brez Android Auto) | najčistejši scenarij: CDM prebujenje + zvok prek BT; omejitve Android Auto v celoti odpadejo |
 | STT/TTS | **Google brezplačno**, go/no-go test v fazi 0 | 0 €; nadgradnja na plačljiv Whisper/TTS API le, če slovenščina ne zadošča |
 | Sivo območje Codexa | **sprejeto** | izključno uradne poti, osebna raba, `AiProvider` rezerva na API ključ |
 | Jezik interakcije | **samo slovenščina** | ena lokalna gramatika, STT fiksno sl-SI |
 | Ime aplikacije | **Sopotnik**, klicno ime asistenta **Sven** | ime v UI, pozdravu in lokalni gramatiki; repozitorij ostane Android-Agent |
 
-**Še odprto:** točen model telefona (potreben za fazo 0).
+**Vse odločitve so sprejete.** Faza 0 je v izvajanju — testna aplikacija in backend proba sta v mapi `phase0/`.
