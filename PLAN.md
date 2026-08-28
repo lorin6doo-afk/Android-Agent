@@ -178,9 +178,13 @@ Cena: največji posamični implementacijski zalogaj (service + session + session
 - **On-device prepoznavanje** (`createOnDeviceSpeechRecognizer`): slovenski offline paket ni zagotovljen na vseh napravah → 🧪 preveriti s `checkRecognitionSupport()` na ciljnem telefonu. Brez njega ob odsotnosti omrežja STT ne dela (lokalni ukazi v avtu brez signala!).
 - **Nadgradnja za točnost:** Whisper-razred prek OpenAI API (plačljivo: `gpt-4o-mini-transcribe` ~0,003 $/min, `whisper-1` ~0,006 $/min) — najboljša slovenščina, a doda latenco in strošek izven naročnine. Vosk nima slovenskega modela; whisper.cpp na telefonu je prepočasen za prijetno uporabo.
 
+**🧪→✅ Preverjeno na napravi (faza 0, 28. 8. 2026):** omrežni Googlov STT za sl-SI na Xiaomi 14 deluje **odlično** — neposredni govor prepoznan skoraj brezhibno, končni rezultat ~16–25 ms po koncu govora, pripravljenost mikrofona <160 ms. **Offline slovenščine NI** (paket za sl ne obstaja; podprti so le veliki jeziki) → glasovno upravljanje brez omrežja ni mogoče. Dodatne ugotovitve: `checkRecognitionSupport` na tej napravi ne poroča online jezikov (nezanesljiv API — online podporo ugotavljaj empirično); enkraten `SERVER_DISCONNECTED` → potreben samodejni retry; ob neprekinjenem zvoku iz okolice (radio!) endpointing ne zaključi seje in prepoznavalnik transkribira oglase — glej zahteve za `SpeechIO` v fazi 1.
+
 ### 4.13 TTS za slovenščino — 🟡 🧪
 
 Sistemski Google TTS ima sl-SI glas na večini naprav, a prisotnost ni zagotovljena → 🧪 runtime preverba `isLanguageAvailable()` + po potrebi poziv za namestitev glasu. Kakovost je »robotska, a razumljiva«. Nadgradnja: oblačni nevronski TTS (Google Chirp 3 HD podpira sl-SI; ElevenLabs, Azure) — lepši glas, a strošek + latenca + odvisnost od omrežja. MVP: sistemski TTS.
+
+**🧪→✅ Preverjeno na napravi (faza 0):** dva **lokalna** sl-SI glasova (kakovost 400 = normal), začetek govora 9–460 ms po klicu. TTS deluje tudi brez omrežja — Sven lahko govori offline, čeprav ne more poslušati (4.12).
 
 ### 4.14 Android Auto — ❌ zaslon avta / ✅ zvok prek BT
 
@@ -221,7 +225,7 @@ Sistemski `AlwaysOnHotwordDetector` (DSP, varčen) je od Androida 12 rezerviran 
 | Modul | Naloga |
 |---|---|
 | `VoiceSessionService` | foreground service (tip `microphone`); upravlja sejo: poslušanje → orkestracija → odgovor; drži notifikacijo z live statusom |
-| `SpeechIO` | STT (streaming, delni rezultati) in TTS; barge-in (prekinitev TTS, ko uporabnik spregovori) v kasnejši fazi |
+| `SpeechIO` | STT (streaming, delni rezultati) in TTS; barge-in v kasnejši fazi. Zahteve iz faze 0: med poslušanjem zahtevaj **ekskluzivni audio focus** (radio/glasba se ustavi — sicer prepoznavalnik transkribira oglase!), **trda omejitev trajanja seje** (~10 s + `stopListening`), samodejni **retry** ob `SERVER_DISCONNECTED`/`NETWORK`, zavrži rezultate po koncu seje, online podpore ne ugotavljaj prek `checkRecognitionSupport` |
 | `IntentRouter` | lokalna slovenska gramatika za hitre ukaze (»pokliči X«, »predvajaj glasbo«, »navigiraj domov«, »preberi obvestila«); vse ostalo gre na AI |
 | `AgentClient` | WebSocket na backend; pošlje transkript + minimalen kontekst (aktivna obvestila, stanje predvajanja …), sprejme `{say, actions[]}` s streamingom |
 | `ActionExecutor` | podmoduli: klici, mediji, navigacija, obvestila, sporočila, sistem |
@@ -244,11 +248,11 @@ Sistemski `AlwaysOnHotwordDetector` (DSP, varčen) je od Androida 12 rezerviran 
 
 ### 5.3 Lokalno proti AI
 
-| Gre lokalno (brez omrežja, <1,5 s) | Gre na AI |
+| Gre lokalno (<1,5 s, brez AI kroga) | Gre na AI |
 |---|---|
 | klic kontakta, predvajaj/pavza/naprej, glasnost, navigacija na znan cilj, svetilka, »preberi zadnja obvestila« (dobesedno) | povzemanje obvestil, sestavljanje odgovorov na sporočila, večturni pogovor, vprašanja, vse dvoumno ali česar lokalna gramatika ne prepozna |
 
-Lokalna pot je hkrati **fallback**, ko backend ni dosegljiv (v avtu brez signala): osnovne funkcije morajo delovati vedno.
+Lokalna pot je hkrati **fallback**, ko backend ni dosegljiv, telefon pa ima internet: osnovni ukazi delujejo brez AI. **Popolnoma brez omrežja glasovno upravljanje ne deluje** — Googlov STT za slovenščino zahteva omrežje (potrjeno v fazi 0, gl. 4.12); Sven takrat lahko le govori (TTS je lokalen), ne pa posluša.
 
 ---
 
@@ -298,6 +302,19 @@ Dodatna pravila:
 - backend: Codex OAuth prijava + prvi programatski klic; meritev latence konec-govora → prvi-zvok,
 - **go/no-go odločitve**: STT/TTS pot za MVP, sprejemljivost latence AI poti.
 
+**Rezultati — telefon (28. 8. 2026, Xiaomi 14 »houji«, Android 16, HyperOS 3.0):**
+
+| Preverba | Izid |
+|---|---|
+| STT natančnost (sl, neposredni govor) | ✅ skoraj brezhibno |
+| STT zakasnitev | ✅ ~16–25 ms po koncu govora (mikrofon pripravljen <160 ms) |
+| STT offline | ❌ slovenskega paketa ni → brez omrežja ni glasovnega upravljanja |
+| TTS | ✅ lokalna sl-SI glasova, start <500 ms, deluje offline |
+| Test ozadja (FGS + zaklep) | ✅ 21/21 tickov, brez vrzeli, brez uboja (autostart + baterija brez omejitev) |
+| Novo odkrite zahteve | audio focus med poslušanjem, omejitev trajanja seje, retry, stale-result guard (gl. `SpeechIO` v 5.1) |
+
+**Odločitev:** Googlov STT + sistemski TTS zadostujeta za MVP (0 €). Backend proba (Codex latenca) še čaka.
+
 ### Faza 1 — jedro »glas → dejanje« (seja v ospredju)
 - foreground service + ploščica/widget za zagon seje (aktivnost je vidna → mikrofon in zagon dejanj brez trikov),
 - `IntentRouter` z lokalnimi ukazi: klic, glasba (nadzor prek `MediaController` + poskus »predvajaj X«), navigacija, glasnost, svetilka,
@@ -320,7 +337,7 @@ Dodatna pravila:
 - CompanionDeviceManager asociacija z avtomobilskim Bluetoothom; ob priklopu: prebujenje, priprava seje, trajno obvestilo, glasovni pozdrav prek TTS,
 - glasovna seja z gumbom na volanu / asistentsko gesto / enim dotikom obvestila — ob zaklenjenem telefonu,
 - »car mode« vedenje: daljše follow-up okno, klici privzeto brez potrditve (nastavljivo), zvok skozi avtomobilski BT,
-- obnašanje brez omrežja: lokalni ukazi delujejo, pomočnik pove, da AI ni dosegljiv.
+- obnašanje brez omrežja: STT za slovenščino zahteva omrežje (faza 0), zato brez signala glasovno upravljanje ne deluje — Sven ob zagonu seje to pove (TTS je lokalen); ukazi prek AI zahtevajo še dosegljiv backend.
 
 ### Faza 5 — poliranje in opcije
 - nastavitve (stopnje potrditev, whitelist kontaktov, »domov«/»služba«), izvoz audit loga,
@@ -353,7 +370,7 @@ Odgovori na odprta vprašanja iz razprave:
 |---|---|---|
 | Kje teče backend | **naprava doma + Tailscale** | backend ni izpostavljen internetu; Codex CLI + gateway na domači napravi 24/7 |
 | ChatGPT naročnina | **Pro** | limiti niso ozko grlo (Pro trenutno izvzet iz 5-urnega okna); *luna* ostane privzeti model zaradi latence, ne varčevanja |
-| Ciljni telefon | **Xiaomi 14 Pro** (HyperOS) | HyperOS agresivno ubija ozadje → onboarding mora vključiti autostart + izjeme baterije; asistentska vloga in CDM sprožilec se preverita na napravi (faze 0/3/4) |
+| Ciljni telefon | **Xiaomi 14** (23127PN0CG »houji«, Android 16 / HyperOS 3.0 — naprava se tako javlja sama) | HyperOS ob vklopljenem autostartu + izjemah baterije v testu NI ubijal ozadja (potrjeno v fazi 0); asistentska vloga in CDM sprožilec se preverita v fazah 3/4 |
 | Avto | **samo Bluetooth zvok** (brez Android Auto) | najčistejši scenarij: CDM prebujenje + zvok prek BT; omejitve Android Auto v celoti odpadejo |
 | STT/TTS | **Google brezplačno**, go/no-go test v fazi 0 | 0 €; nadgradnja na plačljiv Whisper/TTS API le, če slovenščina ne zadošča |
 | Sivo območje Codexa | **sprejeto** | izključno uradne poti, osebna raba, `AiProvider` rezerva na API ključ |
