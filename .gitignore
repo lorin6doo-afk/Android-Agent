@@ -3,8 +3,13 @@ phase0/android/.gradle/
 phase0/android/build/
 phase0/android/app/build/
 phase0/android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
 *.iml
 .idea/
 
 # Node
 node_modules/
+package-lock.json

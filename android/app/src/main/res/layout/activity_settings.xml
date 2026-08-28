@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Backend"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/edit_url"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="ws://ime-naprave:8787 (Tailscale)"
+            android:inputType="textUri" />
+
+        <EditText
+            android:id="@+id/edit_token"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="žeton (SOPOTNIK_TOKEN z backenda)"
+            android:inputType="textPassword" />
+
+        <Button
+            android:id="@+id/btn_test"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Preizkusi povezavo" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Navigacija"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/edit_home"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="domači naslov (za »navigiraj domov«)"
+            android:inputType="textPostalAddress" />
+
+        <EditText
+            android:id="@+id/edit_work"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="naslov službe"
+            android:inputType="textPostalAddress" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Vedenje"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <Switch
+            android:id="@+id/sw_confirm_calls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Glasovna potrditev pred klicem (rumena stopnja)" />
+
+        <Switch
+            android:id="@+id/sw_follow_up"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Po odgovoru poslušaj nadaljevanje" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Dovoljenja"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btn_perms"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Dodeli dovoljenja (mikrofon, stiki, klici)" />
+
+        <Button
+            android:id="@+id/btn_notif_access"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Dostop do obvestil (nadzor glasbe)" />
+
+        <Button
+            android:id="@+id/btn_audit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Pokaži dnevnik dejanj" />
+
+        <Button
+            android:id="@+id/btn_save"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Shrani" />
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,12 @@
+{
+  "name": "sopotnik-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@openai/codex-sdk": "^0.150.1",
+    "ws": "^8.18.0"
+  }
+}

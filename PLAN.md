@@ -242,7 +242,7 @@ Sistemski `AlwaysOnHotwordDetector` (DSP, varčen) je od Androida 12 rezerviran 
 - **edino mesto s ChatGPT/Codex poverilnicami** (OAuth prijava se naredi enkrat, tokene upravlja Codex sam),
 - na telefon izpostavljen **izključno prek Tailscale** (WireGuard VPN, brez odprtih portov proti internetu) — priporočena rešitev; alternativa je javni HTTPS z močnim tokenom,
 - protokol do appa: en WebSocket, sporočila `user_turn`, `say_delta` (za sproten TTS), `actions`, `session_state`,
-- AI vrača **strukturiran JSON po shemi** (`say`, `actions[]`, `needs_confirmation`), backend jo validira; neveljaven output se zavrne in ponovi,
+- odgovor modela (protokol v1): **streamano govorjeno besedilo**, ki mu lahko sledi marker `⟦AKCIJE⟧` z JSON seznamom dejanj — faza 0 je pokazala, da se izhod po JSON shemi ne streama in bi TTS čakal do konca odgovora; z markerjem Sven spregovori ob prvem stavku. Backend JSON za markerjem validira; ob neveljavnem se celoten odgovor obravnava kot govor brez dejanj,
 - privzeti model **gpt-5.6-luna z nizkim reasoning effort** (hitrost in varčnost z limiti), eskalacija na višji tier za kompleksne naloge; za ozadje glej razdelek 3,
 - vsebina obvestil se modelu vedno označi kot **nezaupanja vreden podatek** (obramba pred prompt injection prek prejetih sporočil — model sporočil ne sme obravnavati kot ukaze).
 
@@ -313,7 +313,9 @@ Dodatna pravila:
 | Test ozadja (FGS + zaklep) | ✅ 21/21 tickov, brez vrzeli, brez uboja (autostart + baterija brez omejitev) |
 | Novo odkrite zahteve | audio focus med poslušanjem, omejitev trajanja seje, retry, stale-result guard (gl. `SpeechIO` v 5.1) |
 
-**Odločitev:** Googlov STT + sistemski TTS zadostujeta za MVP (0 €). Backend proba (Codex latenca) še čaka.
+**Rezultati — backend (28. 8. 2026, Mac mini):** ChatGPT prijava deluje (obstoječa Codex prijava na napravi), model `gpt-5.6-luna` je na voljo, slovenščina in ohranjanje konteksta v redu. Hladen start 5,4 s (prvo besedilo 4,6 s), topla nit 4,1 s (3,5 s); vhod ~12,9 k žetonov je Codexovo ogrodje in se od 2. obrata naprej predpomni (12 k zadetkov). Ključna lekcija: **izhod po JSON shemi se ne streama** — besedilo prispe šele ob koncu, zato protokol v1 streama govorjeni del in akcije označi z markerjem (gl. 5.2).
+
+**Faza 0 je ZAKLJUČENA — odločitev GO:** Googlov STT + sistemski TTS (0 €), Codex prek naročnine (luna), latenca AI poti sprejemljiva in izboljšljiva s streamingom; backend bo tekel na Mac mini.
 
 ### Faza 1 — jedro »glas → dejanje« (seja v ospredju)
 - foreground service + ploščica/widget za zagon seje (aktivnost je vidna → mikrofon in zagon dejanj brez trikov),

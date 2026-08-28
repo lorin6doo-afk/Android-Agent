@@ -12,10 +12,19 @@ ChatGPT/Codex prijava deluje, in izmeriti latenco odgovorov.
 
 ```bash
 cd phase0/backend
-npm install                       # namesti Codex SDK + CLI (binarko prinese s sabo)
-npx codex login --device-auth     # izpiše URL + kodo -> odpri na telefonu in potrdi
-node probe.mjs                    # dva testna obrata + meritve
+
+# 1) namesti Codex SDK + CLI (binarko prinese s sabo)
+npm install
+
+# 2) prijava: izpiše URL + kodo -> odpri na telefonu in potrdi
+#    (v zsh ne dodajaj komentarja v isto vrstico z ukazom!)
+npx codex login --device-auth
+
+# 3) dva testna obrata + meritve
+node probe.mjs
 ```
+
+> Opomba: če je na napravi Codex že prijavljen (obstoječ `~/.codex/auth.json`), korak 2 ni potreben.
 
 - `npx codex login status` pokaže, ali si prijavljen.
 - Če je `--device-auth` na računu onemogočen, alternativi (obe uradni):
