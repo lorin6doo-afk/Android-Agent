@@ -13,3 +13,4 @@ android/local.properties
 # Node
 node_modules/
 package-lock.json
+backend/.env

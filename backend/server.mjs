@@ -7,7 +7,21 @@
 import { WebSocketServer } from "ws";
 import { Codex } from "@openai/codex-sdk";
 import { timingSafeEqual } from "node:crypto";
+import { readFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { RealtimeBridge } from "./realtime.mjs";
+
+// Poverilnice iz backend/.env (okoljske spremenljivke imajo prednost).
+const envFile = join(dirname(fileURLToPath(import.meta.url)), ".env");
+if (existsSync(envFile)) {
+  for (const line of readFileSync(envFile, "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m && !m[2].startsWith("#") && process.env[m[1]] === undefined) {
+      process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+    }
+  }
+}
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TOKEN = process.env.SOPOTNIK_TOKEN ?? "";
