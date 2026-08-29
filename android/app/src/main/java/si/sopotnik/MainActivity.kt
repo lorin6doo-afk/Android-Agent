@@ -72,6 +72,8 @@ class MainActivity : Activity(), SessionService.UiListener {
         super.onResume()
         // osveži napis stanja (npr. po preklopu Sven Live v nastavitvah)
         service?.let { it.uiListener = this }
+        // po vklopu dostopa do obvestil HyperOS storitve ne poveže vedno sam
+        NotifListener.ensureBound(this)
     }
 
     override fun onDestroy() {

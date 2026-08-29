@@ -2,10 +2,14 @@ package si.sopotnik
 
 import android.app.Notification
 import android.app.RemoteInput
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Log
 
 data class NotifEntry(
     val key: String,
@@ -23,11 +27,31 @@ data class NotifEntry(
 class NotifListener : NotificationListenerService() {
 
     companion object {
+        const val TAG = "Sopotnik"
+
         @Volatile
         var instance: NotifListener? = null
 
+        fun accessGranted(ctx: Context): Boolean =
+            Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners")
+                ?.contains(ctx.packageName) == true
+
+        /** Po vklopu dostopa HyperOS storitve ne poveže vedno takoj — to jo prisili. */
+        fun ensureBound(ctx: Context) {
+            if (accessGranted(ctx) && instance == null) {
+                runCatching {
+                    requestRebind(ComponentName(ctx, NotifListener::class.java))
+                    Log.i(TAG, "requestRebind poslan (instance je bil null)")
+                }
+            }
+        }
+
         fun snapshot(max: Int = 12): List<NotifEntry>? {
-            val svc = instance ?: return null
+            val svc = instance
+            if (svc == null) {
+                Log.w(TAG, "snapshot(): instance == null (poslušalec ni vezan)")
+                return null
+            }
             return runCatching {
                 svc.activeNotifications
                     .filter { sbn ->
@@ -39,6 +63,7 @@ class NotifListener : NotificationListenerService() {
                     }
                     .sortedByDescending { it.postTime }
                     .take(max)
+                    .also { Log.i(TAG, "snapshot(): ${svc.activeNotifications.size} skupaj, ${it.size} po filtru") }
                     .map { sbn ->
                         val e = sbn.notification.extras
                         NotifEntry(
@@ -82,10 +107,12 @@ class NotifListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         instance = this
+        Log.i(TAG, "poslušalec obvestil POVEZAN")
     }
 
     override fun onListenerDisconnected() {
         instance = null
+        Log.w(TAG, "poslušalec obvestil ODKLOPLJEN")
     }
 
     override fun onDestroy() {

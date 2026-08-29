@@ -10,6 +10,7 @@ import android.media.audiofx.AcousticEchoCanceler
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
+import android.util.Log
 import org.json.JSONObject
 import si.sopotnik.actions.Action
 import si.sopotnik.actions.Actions
@@ -227,9 +228,10 @@ class LiveSession(
             "open_app" -> Actions.execute(service, Action.OpenApp(args.optString("name")))
 
             "read_notifications" -> {
+                NotifListener.ensureBound(service)
                 val list = NotifListener.snapshot()
                 when {
-                    list == null -> "Dostop do obvestil v aplikaciji ni omogočen (Nastavitve → Dostop do obvestil)."
+                    list == null -> "Dostop do obvestil še ni pripravljen — odpri aplikacijo Sopotnik in poskusi znova."
                     list.isEmpty() -> "Ni aktivnih obvestil."
                     else -> {
                         lastNotifs = list
@@ -270,6 +272,7 @@ class LiveSession(
             else -> "Orodja '$name' ne poznam."
         }
 
+        Log.i("Sopotnik", "orodje $name($args) -> $out")
         val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "read_notifications", "send_reply")
         if (name !in selfAudited) {
             AuditLog.append(service, "dejanje", "$name ${args} (live)", "GREEN", out)

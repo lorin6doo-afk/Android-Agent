@@ -198,9 +198,10 @@ object Actions {
             }
 
             is Action.ReadNotifications -> {
+                NotifListener.ensureBound(ctx)
                 val list = NotifListener.snapshot()
                 when {
-                    list == null -> "Dostop do obvestil ni omogočen — vklopi ga v nastavitvah Sopotnika."
+                    list == null -> "Dostop do obvestil še ni pripravljen — odpri Sopotnik in poskusi znova."
                     list.isEmpty() -> "Ni novih obvestil."
                     else -> buildString {
                         append("Imaš ${list.size} obvestil. ")
