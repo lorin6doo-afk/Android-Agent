@@ -22,6 +22,23 @@ node server.mjs
 
 Nastavljivo prek okolja: `PORT` (8787), `SOPOTNIK_MODEL` (`gpt-5.6-luna`), `SOPOTNIK_EFFORT` (`low`).
 
+## Sven Live (realtime govor-v-govor) — zahteva OpenAI API ključ
+
+1. Ustvari ključ na https://platform.openai.com/api-keys (in dodaj plačilno sredstvo v Billing).
+2. Strežnik zaženi z obema ključema:
+   ```bash
+   export SOPOTNIK_TOKEN=<tvoj-obstoječi-žeton>
+   export OPENAI_API_KEY=sk-...
+   node server.mjs
+   ```
+3. V aplikaciji vklopi **Nastavitve → Sven Live** in začni pogovor.
+
+Nastavljivo: `SOPOTNIK_RT_MODEL` (`gpt-realtime`; ceneje: `gpt-realtime-mini`) in
+`SOPOTNIK_RT_VOICE` (`marin`; še: `cedar`, `alloy`, `sage`, `coral` …).
+Okvirni strošek: polni model ≈ 0,05 $/min pogovora, mini ≈ 0,016 $/min; seja se ob
+2 minutah tišine samodejno konča. Klici tudi v živo zahtevajo ustno potrditev,
+kličejo pa izključno številko, ki jo je pred tem našel `find_contact` (trdno pravilo v aplikaciji).
+
 ## Tailscale
 
 1. na Macu: `brew install tailscale && sudo tailscale up` (ali aplikacija iz App Store),

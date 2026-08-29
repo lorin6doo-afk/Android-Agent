@@ -21,6 +21,7 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
         fun onSayDelta(text: String)
         fun onTurnDone(say: String, actionsJson: String?)
         fun onAgentError(message: String)
+        fun onRtMessage(msg: JSONObject) {}
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -33,6 +34,7 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
     private var ready = false
     private var shuttingDown = false
     private var pendingTurn: String? = null
+    private val rawQueue = mutableListOf<String>()
     private val pendingTimeout = Runnable {
         if (pendingTurn != null) {
             pendingTurn = null
@@ -41,6 +43,18 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
     }
 
     val isReady: Boolean get() = ready
+
+    /** Surovo sporočilo (Sven Live rt_* protokol); pred pripravljenostjo se uvrsti v čakalno vrsto. */
+    fun sendJson(obj: JSONObject) {
+        handler.post {
+            val s = obj.toString()
+            if (ready) ws?.send(s)
+            else {
+                rawQueue.add(s)
+                connect()
+            }
+        }
+    }
 
     fun sendTurn(text: String) {
         if (ready) {
@@ -89,6 +103,8 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
             "ready" -> {
                 ready = true
                 cb.onAgentReady()
+                rawQueue.forEach { ws?.send(it) }
+                rawQueue.clear()
                 pendingTurn?.let {
                     pendingTurn = null
                     handler.removeCallbacks(pendingTimeout)
@@ -104,6 +120,8 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
             )
 
             "error" -> cb.onAgentError(msg.optString("message", "Napaka na backendu."))
+
+            else -> if (msg.optString("t").startsWith("rt_")) cb.onRtMessage(msg)
         }
     }
 
@@ -111,6 +129,7 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
         ws = null
         ready = false
         pendingTurn = null
+        rawQueue.clear()
         handler.removeCallbacks(pendingTimeout)
         if (!shuttingDown) cb.onAgentError(message)
         shuttingDown = false

@@ -18,11 +18,12 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import org.json.JSONArray
+import org.json.JSONObject
 import si.sopotnik.actions.Action
 import si.sopotnik.actions.Actions
 import si.sopotnik.actions.ContactMatch
 
-enum class SessionState { IDLE, LISTENING, THINKING, SPEAKING, CONFIRMING, FOLLOWUP }
+enum class SessionState { IDLE, LISTENING, THINKING, SPEAKING, CONFIRMING, FOLLOWUP, LIVE }
 
 /**
  * Glasovna seja: poslušanje -> lokalna gramatika ali AI -> varnostna potrditev -> izvedba -> odgovor.
@@ -68,6 +69,7 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
     private var lastFinalUtterance: String? = null
 
     private var focusRequest: AudioFocusRequest? = null
+    private var live: LiveSession? = null
     private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
@@ -113,6 +115,16 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
         agent.connect()
         endAfterSpeech = false
         pendingCall = null
+        if (prefs.realtime) {
+            setState(SessionState.LIVE)
+            live = LiveSession(
+                this, agent, prefs,
+                onLine = { who, text -> uiListener?.onLine(who, text) },
+                onEnd = { handler.post { endSession() } },
+            )
+            live?.start()
+            return
+        }
         listen(followUp = false)
     }
 
@@ -127,6 +139,9 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
 
     private fun endSession() {
         handler.removeCallbacksAndMessages(null)
+        val l = live
+        live = null
+        l?.end(notify = false)
         speech.cancelListen()
         speech.stopSpeaking()
         abandonFocus()
@@ -380,8 +395,17 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
     }
 
     override fun onAgentError(message: String) {
+        if (state == SessionState.LIVE) {
+            uiListener?.onLine("⚙", message)
+            endSession()
+            return
+        }
         if (state != SessionState.THINKING && state != SessionState.SPEAKING) return
         speakFinal(message)
+    }
+
+    override fun onRtMessage(msg: JSONObject) {
+        live?.onRt(msg)
     }
 
     // ---- infrastruktura ----
@@ -401,6 +425,7 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
         SessionState.SPEAKING -> "Govorim …"
         SessionState.CONFIRMING -> "Čakam potrditev …"
         SessionState.FOLLOWUP -> "Poslušam nadaljevanje …"
+        SessionState.LIVE -> "Sven Live 🔴 — govori kar naravno"
     }
 
     private fun requestFocus() {

@@ -88,6 +88,12 @@
             android:layout_height="wrap_content"
             android:text="Po odgovoru poslušaj nadaljevanje" />
 
+        <Switch
+            android:id="@+id/sw_realtime"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Sven Live — realtime glas (zahteva OPENAI_API_KEY na Macu)" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

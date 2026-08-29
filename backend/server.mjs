@@ -7,11 +7,17 @@
 import { WebSocketServer } from "ws";
 import { Codex } from "@openai/codex-sdk";
 import { timingSafeEqual } from "node:crypto";
+import { RealtimeBridge } from "./realtime.mjs";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TOKEN = process.env.SOPOTNIK_TOKEN ?? "";
 const MODEL = process.env.SOPOTNIK_MODEL ?? "gpt-5.6-luna";
 const EFFORT = process.env.SOPOTNIK_EFFORT ?? "low";
+
+// »Sven Live« (realtime govor-v-govor) — zahteva OpenAI API ključ.
+const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
+const RT_MODEL = process.env.SOPOTNIK_RT_MODEL ?? "gpt-realtime";
+const RT_VOICE = process.env.SOPOTNIK_RT_VOICE ?? "marin";
 
 if (!TOKEN || TOKEN.length < 16) {
   console.error("Nastavi SOPOTNIK_TOKEN (vsaj 16 znakov), npr.:  SOPOTNIK_TOKEN=$(openssl rand -hex 24) node server.mjs");
@@ -44,6 +50,7 @@ wss.on("connection", (ws, req) => {
   let thread = null;
   let firstTurn = true;
   let busy = false;
+  let rt = null;
 
   const send = (o) => {
     try { ws.send(JSON.stringify(o)); } catch { /* povezava je morda že zaprta */ }
@@ -66,6 +73,21 @@ wss.on("connection", (ws, req) => {
     }
 
     if (!authed) { ws.close(4001, "auth"); return; }
+
+    // ---- Sven Live (realtime) ----
+    if (msg.t === "rt_start") {
+      if (!OPENAI_KEY) {
+        send({ t: "rt_error", message: "Na strežniku ni nastavljen OPENAI_API_KEY — Sven Live ni na voljo." });
+        return;
+      }
+      rt?.stop();
+      rt = new RealtimeBridge({ apiKey: OPENAI_KEY, model: RT_MODEL, voice: RT_VOICE, send, label: `live:${peer}` });
+      rt.start(Number(msg.rate) || 24000);
+      return;
+    }
+    if (msg.t === "rt_audio") { rt?.appendAudio(msg.data); return; }
+    if (msg.t === "rt_action_result") { rt?.toolResult(msg.callId, msg.result); return; }
+    if (msg.t === "rt_stop") { rt?.stop(); rt = null; return; }
 
     if (msg.t === "reset") { thread = null; firstTurn = true; return; }
     if (msg.t !== "user_turn" || typeof msg.text !== "string") return;
@@ -145,7 +167,11 @@ wss.on("connection", (ws, req) => {
     }
   });
 
-  ws.on("close", () => console.log(`[${new Date().toISOString()}] odklop ${peer}`));
+  ws.on("close", () => {
+    rt?.stop();
+    rt = null;
+    console.log(`[${new Date().toISOString()}] odklop ${peer}`);
+  });
 });
 
 console.log(`Sopotnik gateway posluša na vratih ${PORT} (model: ${MODEL || "privzeti"}, reasoning: ${EFFORT})`);

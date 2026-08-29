@@ -22,6 +22,7 @@ class SettingsActivity : Activity() {
     private lateinit var editWork: EditText
     private lateinit var swConfirmCalls: Switch
     private lateinit var swFollowUp: Switch
+    private lateinit var swRealtime: Switch
 
     private var testClient: AgentClient? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -38,6 +39,7 @@ class SettingsActivity : Activity() {
         editWork = findViewById(R.id.edit_work)
         swConfirmCalls = findViewById(R.id.sw_confirm_calls)
         swFollowUp = findViewById(R.id.sw_follow_up)
+        swRealtime = findViewById(R.id.sw_realtime)
 
         editUrl.setText(prefs.backendUrl)
         editToken.setText(prefs.token)
@@ -45,6 +47,7 @@ class SettingsActivity : Activity() {
         editWork.setText(prefs.workAddress)
         swConfirmCalls.isChecked = prefs.confirmCalls
         swFollowUp.isChecked = prefs.followUp
+        swRealtime.isChecked = prefs.realtime
 
         findViewById<Button>(R.id.btn_save).setOnClickListener {
             save()
@@ -88,6 +91,7 @@ class SettingsActivity : Activity() {
         prefs.workAddress = editWork.text.toString()
         prefs.confirmCalls = swConfirmCalls.isChecked
         prefs.followUp = swFollowUp.isChecked
+        prefs.realtime = swRealtime.isChecked
     }
 
     private fun testConnection() {

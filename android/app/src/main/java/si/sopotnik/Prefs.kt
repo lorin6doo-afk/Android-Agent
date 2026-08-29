@@ -43,6 +43,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("follow_up", true)
         set(v) = sp.edit().putBoolean("follow_up", v).apply()
 
+    /** Sven Live — realtime govor-v-govor prek OpenAI API ključa na backendu. */
+    var realtime: Boolean
+        get() = sp.getBoolean("realtime_mode", false)
+        set(v) = sp.edit().putBoolean("realtime_mode", v).apply()
+
     // ---- Keystore šifriranje ----
 
     private fun key(): SecretKey {
