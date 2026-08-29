@@ -68,6 +68,12 @@ class MainActivity : Activity(), SessionService.UiListener {
         if (intent.getBooleanExtra("autostart", false)) startSessionChecked()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // osveži napis stanja (npr. po preklopu Sven Live v nastavitvah)
+        service?.let { it.uiListener = this }
+    }
+
     override fun onDestroy() {
         service?.uiListener = null
         runCatching { unbindService(connection) }

@@ -125,6 +125,12 @@ class SettingsActivity : Activity() {
         }, 6_000)
     }
 
+    override fun onPause() {
+        // Nastavitve se shranijo samodejno — gumb Shrani ni več obvezen.
+        save()
+        super.onPause()
+    }
+
     override fun onDestroy() {
         testClient?.shutdown()
         super.onDestroy()

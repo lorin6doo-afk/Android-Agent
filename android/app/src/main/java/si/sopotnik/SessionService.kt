@@ -419,7 +419,7 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
     }
 
     private fun stateLabel(): String = when (state) {
-        SessionState.IDLE -> "Pripravljen."
+        SessionState.IDLE -> if (prefs.realtime) "Pripravljen — Sven Live je VKLOPLJEN." else "Pripravljen — klasični način."
         SessionState.LISTENING -> "Poslušam …"
         SessionState.THINKING -> "Razmišljam …"
         SessionState.SPEAKING -> "Govorim …"
