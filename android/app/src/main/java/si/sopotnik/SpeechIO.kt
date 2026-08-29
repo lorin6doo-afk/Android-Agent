@@ -24,6 +24,7 @@ class SpeechIO(private val ctx: Context, private val cb: Callback) {
         fun onSttPartial(text: String)
         fun onSttFinal(text: String)
         fun onSttError(name: String, transient: Boolean, noSpeech: Boolean)
+        fun onSttDebug(msg: String)
         fun onUtteranceDone(id: String)
     }
 
@@ -32,6 +33,7 @@ class SpeechIO(private val ctx: Context, private val cb: Callback) {
 
     private var recognizer: SpeechRecognizer? = null
     private var gen = 0
+    private var lastPartial = ""
     private val capRunnable = Runnable { recognizer?.stopListening() }
 
     private var tts: TextToSpeech? = null
@@ -63,6 +65,7 @@ class SpeechIO(private val ctx: Context, private val cb: Callback) {
     fun listen(followUp: Boolean) {
         cancelListen()
         gen++
+        lastPartial = ""
         val myGen = gen
         val r = SpeechRecognizer.createSpeechRecognizer(ctx)
         recognizer = r
@@ -79,7 +82,10 @@ class SpeechIO(private val ctx: Context, private val cb: Callback) {
             override fun onPartialResults(partialResults: Bundle?) {
                 if (myGen != gen) return
                 partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    ?.firstOrNull()?.let { cb.onSttPartial(it) }
+                    ?.firstOrNull()?.let {
+                        if (it.isNotBlank()) lastPartial = it
+                        cb.onSttPartial(it)
+                    }
             }
 
             override fun onResults(results: Bundle?) {
@@ -87,13 +93,30 @@ class SpeechIO(private val ctx: Context, private val cb: Callback) {
                 handler.removeCallbacks(capRunnable)
                 val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()?.trim().orEmpty()
-                if (text.isEmpty()) cb.onSttError("NO_MATCH", transient = false, noSpeech = true)
-                else cb.onSttFinal(text)
+                when {
+                    text.isNotEmpty() -> cb.onSttFinal(text)
+                    lastPartial.isNotBlank() -> {
+                        cb.onSttDebug("prazen končni rezultat — uporabim delni prepis")
+                        val t = lastPartial
+                        lastPartial = ""
+                        cb.onSttFinal(t.trim())
+                    }
+                    else -> cb.onSttError("NO_MATCH", transient = false, noSpeech = true)
+                }
             }
 
             override fun onError(error: Int) {
                 if (myGen != gen) return
                 handler.removeCallbacks(capRunnable)
+                // Prepoznavalnik na nekaterih napravah po dobrih delnih rezultatih
+                // konča z napako namesto z onResults — takrat rešimo delni prepis.
+                if (lastPartial.isNotBlank() && error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                    cb.onSttDebug("STT napaka $error po delnih rezultatih — uporabim delni prepis")
+                    val t = lastPartial
+                    lastPartial = ""
+                    cb.onSttFinal(t.trim())
+                    return
+                }
                 val (name, transient, noSpeech) = when (error) {
                     SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> Triple("NETWORK_TIMEOUT", true, false)
                     SpeechRecognizer.ERROR_NETWORK -> Triple("NETWORK", true, false)
@@ -112,12 +135,12 @@ class SpeechIO(private val ctx: Context, private val cb: Callback) {
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
 
+        // Ista konfiguracija kot v fazi 0, kjer je prepoznava dokazano delovala —
+        // brez eksperimentalnih nastavitev dolžine tišine.
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "sl-SI")
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1300)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1300)
         }
         r.startListening(intent)
         handler.postDelayed(capRunnable, if (followUp) 7_000L else 12_000L)

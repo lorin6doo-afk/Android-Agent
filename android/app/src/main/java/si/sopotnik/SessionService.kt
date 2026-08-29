@@ -133,6 +133,15 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
     }
 
     private fun handleUtterance(text: String) {
+        try {
+            handleUtteranceInner(text)
+        } catch (e: Exception) {
+            uiListener?.onLine("⚙", "notranja napaka: $e")
+            speakFinal("Ups, nekaj se je zalomilo.")
+        }
+    }
+
+    private fun handleUtteranceInner(text: String) {
         uiListener?.onLine("TI", text)
 
         if (state == SessionState.CONFIRMING) {
@@ -312,10 +321,14 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
                 speakFinal("Nisem slišal potrditve, zato ne naredim nič.")
             }
 
-            noSpeech -> endSession()
+            noSpeech -> {
+                uiListener?.onLine("⚙", "nič slišanega ($name) — konec seje")
+                endSession()
+            }
 
             transient && !sttRetryUsed -> {
                 sttRetryUsed = true
+                uiListener?.onLine("⚙", "STT $name — poskušam znova")
                 speech.listen(inFollowUpListen)
             }
 
@@ -323,6 +336,10 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
 
             else -> speakFinal("Prepoznava govora trenutno ne deluje ($name).")
         }
+    }
+
+    override fun onSttDebug(msg: String) {
+        uiListener?.onLine("⚙", msg)
     }
 
     override fun onUtteranceDone(id: String) {
