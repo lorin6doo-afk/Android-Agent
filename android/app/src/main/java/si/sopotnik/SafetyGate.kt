@@ -22,7 +22,8 @@ object SafetyGate {
         is Action.VolumeUp,
         is Action.VolumeDown,
         is Action.VolumeSet,
-        is Action.Torch -> Tier.GREEN
+        is Action.Torch,
+        is Action.ReadNotifications -> Tier.GREEN
     }
 
     private val yes = Regex("^(ja|da|seveda|potrdi|poslji|poklici|prav|ok|okej|okey|lahko|dajmo|daj)\\b.*")

@@ -42,6 +42,8 @@ class LiveSession(
     private var recordThread: Thread? = null
     private var track: AudioTrack? = null
     private var lastFound: ContactMatch? = null
+    private var lastNotifs: List<NotifEntry> = emptyList()
+    private var lastNotifsAt = 0L
 
     private val idleTimeout = Runnable {
         onLine("⚙", "2 minuti tišine — končujem živo sejo.")
@@ -224,6 +226,42 @@ class LiveSession(
 
             "open_app" -> Actions.execute(service, Action.OpenApp(args.optString("name")))
 
+            "read_notifications" -> {
+                val list = NotifListener.snapshot()
+                when {
+                    list == null -> "Dostop do obvestil v aplikaciji ni omogočen (Nastavitve → Dostop do obvestil)."
+                    list.isEmpty() -> "Ni aktivnih obvestil."
+                    else -> {
+                        lastNotifs = list
+                        lastNotifsAt = System.currentTimeMillis()
+                        AuditLog.append(service, "obvestila", "prebranih ${list.size} (live)", "GREEN", "ok")
+                        list.mapIndexed { i, n ->
+                            "${i + 1}) [${n.app}] ${n.title}: ${n.text.take(160)}${if (n.canReply) " [odgovor možen]" else ""}"
+                        }.joinToString("\n")
+                    }
+                }
+            }
+
+            "send_reply" -> {
+                val idx = args.optInt("number") - 1
+                val text = args.optString("text")
+                val fresh = System.currentTimeMillis() - lastNotifsAt < 5 * 60_000
+                val entry = lastNotifs.getOrNull(idx)
+                when {
+                    text.isBlank() -> "Manjka besedilo odgovora."
+                    entry == null || !fresh -> "Najprej znova preberi obvestila z read_notifications."
+                    !entry.canReply -> "Na to obvestilo ni mogoče odgovoriti."
+                    NotifListener.reply(entry.key, text) -> {
+                        AuditLog.append(service, "dejanje", "odgovor -> ${entry.app}/${entry.title}: $text", "YELLOW", "ustno potrjeno, poslano (live)")
+                        "Odgovor poslan."
+                    }
+                    else -> {
+                        AuditLog.append(service, "dejanje", "odgovor -> ${entry.app}/${entry.title}", "YELLOW", "pošiljanje ni uspelo")
+                        "Pošiljanje ni uspelo — obvestilo je morda izginilo."
+                    }
+                }
+            }
+
             "end_conversation" -> {
                 handler.postDelayed({ end(notify = true) }, 5_000)
                 "Seja se bo končala. Poslovi se."
@@ -232,7 +270,8 @@ class LiveSession(
             else -> "Orodja '$name' ne poznam."
         }
 
-        if (name != "find_contact" && name != "call_contact" && name != "get_time" && name != "end_conversation") {
+        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "read_notifications", "send_reply")
+        if (name !in selfAudited) {
             AuditLog.append(service, "dejanje", "$name ${args} (live)", "GREEN", out)
         }
         result(callId, out)

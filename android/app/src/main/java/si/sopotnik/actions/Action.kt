@@ -14,6 +14,7 @@ sealed class Action {
     object VolumeDown : Action()
     data class VolumeSet(val percent: Int) : Action()
     data class Torch(val on: Boolean) : Action()
+    object ReadNotifications : Action()
 }
 
 data class ContactMatch(val name: String, val number: String)

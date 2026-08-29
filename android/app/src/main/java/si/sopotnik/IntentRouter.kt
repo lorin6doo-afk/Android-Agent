@@ -45,7 +45,7 @@ class IntentRouter(private val prefs: Prefs) {
         }
 
         if (Regex("""^(preberi\s+)?(obvestila|sporocila)$""").matches(n) || n == "kaj je novega") {
-            return Route.Answer("Branje obvestil dodam v naslednji fazi.")
+            return Route.Do(Action.ReadNotifications)
         }
 
         if (Regex("""^(pavza|pavziraj|ustavi glasbo|ustavi predvajanje)$""").matches(n)) return Route.Do(Action.MediaPause)

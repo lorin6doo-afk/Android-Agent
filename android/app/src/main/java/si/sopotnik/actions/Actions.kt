@@ -184,6 +184,21 @@ object Actions {
                 "Glasnost na ${action.percent} odstotkov."
             }
 
+            is Action.ReadNotifications -> {
+                val list = NotifListener.snapshot()
+                when {
+                    list == null -> "Dostop do obvestil ni omogočen — vklopi ga v nastavitvah Sopotnika."
+                    list.isEmpty() -> "Ni novih obvestil."
+                    else -> buildString {
+                        append("Imaš ${list.size} obvestil. ")
+                        list.take(5).forEachIndexed { i, n ->
+                            append("${i + 1}: ${n.app}, ${n.title}. ${n.text.take(120)}. ")
+                        }
+                        if (list.size > 5) append("In še ${list.size - 5} drugih.")
+                    }
+                }
+            }
+
             is Action.Torch -> {
                 val cm = ctx.getSystemService(CameraManager::class.java)
                 val id = cm.cameraIdList.firstOrNull {
