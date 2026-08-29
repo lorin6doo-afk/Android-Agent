@@ -119,22 +119,35 @@ object Actions {
 
             is Action.MediaPlaySearch -> when (action.app) {
                 "youtube" -> {
+                    // YouTube Music ob play-from-search samodejno zaigra; navadni YouTube le odpre iskanje.
                     try {
                         ctx.startActivity(
-                            Intent(Intent.ACTION_SEARCH)
-                                .setPackage("com.google.android.youtube")
-                                .putExtra("query", action.query)
+                            Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+                                .setPackage("com.google.android.apps.youtube.music")
+                                .putExtra(SearchManager.QUERY, action.query)
+                                .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         )
+                        "Predvajam ${action.query} na YouTube Music."
                     } catch (e: Exception) {
-                        ctx.startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(action.query))
-                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
+                        try {
+                            ctx.startActivity(
+                                Intent(Intent.ACTION_SEARCH)
+                                    .setPackage("com.google.android.youtube")
+                                    .putExtra("query", action.query)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                            "Odpiram iskanje ${action.query} na YouTube — izberi posnetek."
+                        } catch (e2: Exception) {
+                            ctx.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(action.query))
+                                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                            "Iščem ${action.query} na YouTube."
+                        }
                     }
-                    "Iščem ${action.query} na YouTube."
                 }
 
                 "spotify" -> {
