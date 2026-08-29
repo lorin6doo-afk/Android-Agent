@@ -31,6 +31,7 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
 
     private var ws: WebSocket? = null
     private var ready = false
+    private var shuttingDown = false
     private var pendingTurn: String? = null
     private val pendingTimeout = Runnable {
         if (pendingTurn != null) {
@@ -72,7 +73,8 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                handler.post { onDisconnected("Povezava z backendom ni uspela.") }
+                val detail = t.message?.take(160)?.let { " ($it)" } ?: ""
+                handler.post { onDisconnected("Povezava z backendom ni uspela$detail") }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -106,12 +108,12 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
     }
 
     private fun onDisconnected(message: String) {
-        val hadPending = pendingTurn != null
         ws = null
         ready = false
         pendingTurn = null
         handler.removeCallbacks(pendingTimeout)
-        if (hadPending) cb.onAgentError(message)
+        if (!shuttingDown) cb.onAgentError(message)
+        shuttingDown = false
     }
 
     fun resetConversation() {
@@ -119,9 +121,11 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
     }
 
     fun shutdown() {
+        shuttingDown = true
         handler.removeCallbacks(pendingTimeout)
         ws?.close(1000, "konec")
         ws = null
         ready = false
+        pendingTurn = null
     }
 }

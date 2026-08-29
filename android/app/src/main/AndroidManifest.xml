@@ -18,10 +18,13 @@
         </intent>
     </queries>
 
+    <!-- usesCleartextTraffic: ws:// do backenda teče izključno znotraj
+         Tailscale (WireGuard) tunela, ki promet šifrira na omrežni plasti. -->
     <application
         android:label="Sopotnik"
         android:icon="@drawable/ic_launcher"
         android:theme="@style/Theme.Sopotnik"
+        android:usesCleartextTraffic="true"
         android:allowBackup="false">
 
         <activity
