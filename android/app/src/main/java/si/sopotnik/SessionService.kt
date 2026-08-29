@@ -14,7 +14,9 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Binder
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import org.json.JSONArray
 import si.sopotnik.actions.Action
 import si.sopotnik.actions.Actions
@@ -66,6 +68,7 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
     private var lastFinalUtterance: String? = null
 
     private var focusRequest: AudioFocusRequest? = null
+    private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
@@ -123,6 +126,7 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
     fun stopSession() = endSession()
 
     private fun endSession() {
+        handler.removeCallbacksAndMessages(null)
         speech.cancelListen()
         speech.stopSpeaking()
         abandonFocus()
@@ -292,7 +296,9 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
             return
         }
         setState(SessionState.FOLLOWUP)
-        listen(followUp = true)
+        // Kratek premor: takojšen zagon prepoznave po TTS na tej napravi
+        // konča s SERVER_DISCONNECTED (zvočni cevovod še ni sproščen).
+        handler.postDelayed({ if (state == SessionState.FOLLOWUP) listen(followUp = true) }, 350)
     }
 
     // ---- SpeechIO.Callback ----
@@ -329,7 +335,7 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
             transient && !sttRetryUsed -> {
                 sttRetryUsed = true
                 uiListener?.onLine("⚙", "STT $name — poskušam znova")
-                speech.listen(inFollowUpListen)
+                handler.postDelayed({ if (state != SessionState.IDLE) speech.listen(inFollowUpListen) }, 400)
             }
 
             name == "PERMISSIONS" -> endSession()
@@ -344,7 +350,9 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
 
     override fun onUtteranceDone(id: String) {
         when {
-            id == "confirm-prompt" && state == SessionState.CONFIRMING -> speech.listen(true)
+            id == "confirm-prompt" && state == SessionState.CONFIRMING ->
+                handler.postDelayed({ if (state == SessionState.CONFIRMING) speech.listen(true) }, 300)
+
             id == lastFinalUtterance -> afterSpeech()
         }
     }

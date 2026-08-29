@@ -67,6 +67,36 @@ object Actions {
                 "Kličem ${c.name}."
             }
 
+            is Action.OpenApp -> {
+                val pm = ctx.packageManager
+                val q = IntentRouter.normalize(action.query).trim()
+                var bestPkg: String? = null
+                var bestLabel = ""
+                var bestScore = 0
+                pm.queryIntentActivities(
+                    Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0
+                ).forEach { ri ->
+                    val label = ri.loadLabel(pm).toString()
+                    val ln = IntentRouter.normalize(label)
+                    val score = when {
+                        ln == q -> 100
+                        ln.startsWith(q) -> 80
+                        ln.split(' ').any { it.startsWith(q) } -> 60
+                        ln.contains(q) -> 40
+                        else -> 0
+                    }
+                    if (score > bestScore) {
+                        bestScore = score
+                        bestPkg = ri.activityInfo.packageName
+                        bestLabel = label
+                    }
+                }
+                val pkg = bestPkg ?: error("aplikacije '${action.query}' ne najdem")
+                val launch = pm.getLaunchIntentForPackage(pkg) ?: error("aplikacije ni mogoče zagnati")
+                ctx.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                "Odpiram $bestLabel."
+            }
+
             is Action.MediaPlay -> {
                 controller(ctx)?.transportControls?.play() ?: sendKey(ctx, KeyEvent.KEYCODE_MEDIA_PLAY)
                 "Velja."
@@ -87,14 +117,46 @@ object Actions {
                 "Prejšnja."
             }
 
-            is Action.MediaPlaySearch -> {
-                ctx.startActivity(
-                    Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
-                        .putExtra(SearchManager.QUERY, action.query)
-                        .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
-                "Iščem ${action.query}."
+            is Action.MediaPlaySearch -> when (action.app) {
+                "youtube" -> {
+                    try {
+                        ctx.startActivity(
+                            Intent(Intent.ACTION_SEARCH)
+                                .setPackage("com.google.android.youtube")
+                                .putExtra("query", action.query)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    } catch (e: Exception) {
+                        ctx.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(action.query))
+                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                    "Iščem ${action.query} na YouTube."
+                }
+
+                "spotify" -> {
+                    ctx.startActivity(
+                        Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+                            .setPackage("com.spotify.music")
+                            .putExtra(SearchManager.QUERY, action.query)
+                            .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                    "Iščem ${action.query} na Spotifyju."
+                }
+
+                else -> {
+                    ctx.startActivity(
+                        Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+                            .putExtra(SearchManager.QUERY, action.query)
+                            .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                    "Iščem ${action.query}."
+                }
             }
 
             is Action.Navigate -> {

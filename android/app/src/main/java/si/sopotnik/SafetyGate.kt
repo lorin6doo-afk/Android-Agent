@@ -12,6 +12,7 @@ object SafetyGate {
 
     fun classify(action: Action, prefs: Prefs): Tier = when (action) {
         is Action.Call -> if (prefs.confirmCalls) Tier.YELLOW else Tier.GREEN
+        is Action.OpenApp,
         is Action.MediaPlay,
         is Action.MediaPlaySearch,
         is Action.MediaPause,

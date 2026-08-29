@@ -19,8 +19,11 @@ class IntentRouter(private val prefs: Prefs) {
 
     fun parse(original: String): Route {
         val fullNorm = normalize(original)
-        val offset = Regex("""^sven[,!]?\s+""").find(fullNorm)?.value?.length ?: 0
-        val n = fullNorm.substring(offset).trim().trimEnd('.', '!', '?')
+        var offset = Regex("""^\s*sven[,!]?\s+""").find(fullNorm)?.value?.length ?: 0
+        val sub = fullNorm.substring(offset)
+        val lead = sub.indexOfFirst { !it.isWhitespace() }
+        if (lead > 0) offset += lead
+        val n = sub.trim().trimEnd('.', '!', '?')
         if (n.isEmpty()) return Route.End
 
         fun orig(range: IntRange): String =
@@ -50,8 +53,38 @@ class IntentRouter(private val prefs: Prefs) {
         if (Regex("""^(nazaj|prejsnja( pesem| skladba)?)$""").matches(n)) return Route.Do(Action.MediaPrev)
         if (Regex("""^(predvajaj|nadaljuj|glasba)( glasbo| predvajanje)?$""").matches(n)) return Route.Do(Action.MediaPlay)
 
-        Regex("""^(predvajaj|zavrti)\s+(.+)$""").find(n)?.let { m ->
-            return Route.Do(Action.MediaPlaySearch(orig(m.groups[2]!!.range)))
+        Regex("""^(predvajaj|zavrti)(\s+mi)?\s+(.+)$""").find(n)?.let { m ->
+            val g = m.groups[3]!!
+            var qn = m.groupValues[3]
+            var qo = original.substring(offset + g.range.first, offset + g.range.last + 1)
+            var app: String? = null
+
+            Regex("""\s+na\s+(youtube\w*|jutjub\w*|jutub\w*)$""").find(qn)?.let { t ->
+                app = "youtube"
+                qo = qo.substring(0, t.range.first)
+                qn = qn.substring(0, t.range.first)
+            }
+            if (app == null) Regex("""\s+na\s+spotify\w*$""").find(qn)?.let { t ->
+                app = "spotify"
+                qo = qo.substring(0, t.range.first)
+                qn = qn.substring(0, t.range.first)
+            }
+
+            val filler = Regex("""^(glasbo|glas bo|glasba|muziko|pesem|pesmico|skladbo|skupino|skupine|skupina|izvajalca)\s+""")
+            while (true) {
+                val f = filler.find(qn) ?: break
+                qn = qn.substring(f.range.last + 1)
+                qo = qo.substring(f.range.last + 1)
+            }
+            qn = qn.trim().removeSuffix(" prosim").trim()
+            qo = qo.trim().trimEnd('.', '!', '?').removeSuffix(" prosim").trim()
+
+            return if (qn.isEmpty() || qn in setOf("glasbo", "glas bo", "glasba", "muziko")) {
+                if (app == "youtube") Route.Do(Action.MediaPlaySearch("glasba", "youtube"))
+                else Route.Do(Action.MediaPlay)
+            } else {
+                Route.Do(Action.MediaPlaySearch(qo, app))
+            }
         }
 
         Regex("""^glasnost na (\d{1,3})( odstotkov| procentov)?$""").find(n)?.let { m ->
@@ -68,7 +101,7 @@ class IntentRouter(private val prefs: Prefs) {
             return Route.Do(Action.Torch(false))
         }
 
-        Regex("""^(navigiraj|pelji me|vodi me|zeni navigacijo)( (do|v|na|proti))?\s+(.+)$""").find(n)?.let { m ->
+        Regex("""^(navigiraj|pelji me|vodi me|zeni navigacijo|zazeni navigacijo)( (do|v|na|proti))?\s+(.+)$""").find(n)?.let { m ->
             val destNorm = m.groupValues[4].trim()
             val dest = when {
                 destNorm in setOf("domov", "domu", "dom") ->
@@ -78,6 +111,10 @@ class IntentRouter(private val prefs: Prefs) {
                 else -> orig(m.groups[4]!!.range)
             }
             return Route.Do(Action.Navigate(dest))
+        }
+
+        Regex("""^(odpri|zazeni)\s+(.+)$""").find(n)?.let { m ->
+            return Route.Do(Action.OpenApp(orig(m.groups[2]!!.range)))
         }
 
         return Route.Ai(original)
