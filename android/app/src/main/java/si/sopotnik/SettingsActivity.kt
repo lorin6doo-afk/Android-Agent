@@ -74,6 +74,14 @@ class SettingsActivity : Activity() {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
 
+        findViewById<Button>(R.id.btn_diag).setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("🩺 Diagnostika obvestil")
+                .setMessage(NotifListener.diagReport(this))
+                .setPositiveButton("Zapri", null)
+                .show()
+        }
+
         findViewById<Button>(R.id.btn_audit).setOnClickListener {
             val lines = AuditLog.tail(this, 50)
             AlertDialog.Builder(this)

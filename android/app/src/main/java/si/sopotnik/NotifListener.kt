@@ -5,11 +5,15 @@ import android.app.RemoteInput
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import java.util.concurrent.atomic.AtomicBoolean
 
 data class NotifEntry(
     val key: String,
@@ -36,14 +40,67 @@ class NotifListener : NotificationListenerService() {
             Settings.Secure.getString(ctx.contentResolver, "enabled_notification_listeners")
                 ?.contains(ctx.packageName) == true
 
-        /** Po vklopu dostopa HyperOS storitve ne poveže vedno takoj — to jo prisili. */
+        private val rescueScheduled = AtomicBoolean(false)
+
+        /**
+         * Po vklopu dostopa HyperOS storitve ne poveže vedno takoj — to jo prisili.
+         * Če requestRebind ne zaleže, čez 2 s še znani obhod za zataknjene poslušalce:
+         * cikel onemogoči/omogoči komponente (grant pri tem ostane) + nov requestRebind.
+         */
         fun ensureBound(ctx: Context) {
-            if (accessGranted(ctx) && instance == null) {
-                runCatching {
-                    requestRebind(ComponentName(ctx, NotifListener::class.java))
-                    Log.i(TAG, "requestRebind poslan (instance je bil null)")
+            if (!accessGranted(ctx) || instance != null) return
+            val cn = ComponentName(ctx, NotifListener::class.java)
+            runCatching {
+                requestRebind(cn)
+                Log.i(TAG, "requestRebind poslan (instance je bil null)")
+            }
+            if (!rescueScheduled.compareAndSet(false, true)) return
+            val app = ctx.applicationContext
+            Handler(Looper.getMainLooper()).postDelayed({
+                rescueScheduled.set(false)
+                if (accessGranted(app) && instance == null) {
+                    runCatching {
+                        val pm = app.packageManager
+                        pm.setComponentEnabledSetting(cn, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                        pm.setComponentEnabledSetting(cn, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+                        requestRebind(cn)
+                        Log.i(TAG, "obhod: cikel onemogoči/omogoči komponente + requestRebind")
+                    }
+                }
+            }, 2_000)
+        }
+
+        /** Poročilo za gumb 🩺 v nastavitvah in za DebugReceiver (adb). */
+        fun diagReport(ctx: Context): String {
+            val granted = accessGranted(ctx)
+            val svc = instance
+            val sb = StringBuilder()
+            sb.appendLine("dostop podeljen: ${if (granted) "DA" else "NE"}")
+            sb.appendLine("poslušalec vezan: ${if (svc != null) "DA" else "NE"}")
+            when {
+                !granted -> {
+                    sb.appendLine()
+                    sb.appendLine("Podeli dostop z gumbom »Dostop do obvestil«. Na Androidu 16 prej: Podatki o aplikaciji → ⋮ → Dovoli omejene nastavitve.")
+                }
+                svc == null -> {
+                    ensureBound(ctx)
+                    sb.appendLine()
+                    sb.appendLine("Vezavo sem pravkar znova zahteval (requestRebind + obhod). Počakaj 3 sekunde in znova pritisni 🩺. Če ostane NE: izklopi in znova vklopi dostop do obvestil ali ponovno zaženi telefon.")
+                }
+                else -> {
+                    val all = runCatching { svc.activeNotifications.size }.getOrNull()
+                    if (all == null) sb.appendLine("branje activeNotifications NI uspelo — poslušalec je vezan le navidezno; izklopi in znova vklopi dostop.")
+                    else {
+                        val filtered = snapshot() ?: emptyList()
+                        sb.appendLine("aktivnih obvestil v sistemu: $all")
+                        sb.appendLine("po filtru (brez trajnih in povzetkov skupin): ${filtered.size}")
+                        filtered.take(4).forEachIndexed { i, n ->
+                            sb.appendLine("${i + 1}) [${n.app}] ${n.title}${if (n.canReply) " ↩" else ""}")
+                        }
+                    }
                 }
             }
+            return sb.toString().trimEnd()
         }
 
         fun snapshot(max: Int = 12): List<NotifEntry>? {

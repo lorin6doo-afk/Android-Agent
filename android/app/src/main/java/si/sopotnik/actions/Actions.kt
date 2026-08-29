@@ -118,8 +118,22 @@ object Actions {
             }
 
             is Action.MediaPlaySearch -> when (action.app) {
-                "youtube" -> {
-                    // YouTube Music ob play-from-search samodejno zaigra; navadni YouTube le odpre iskanje.
+                "spotify" -> {
+                    ctx.startActivity(
+                        Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+                            .setPackage("com.spotify.music")
+                            .putExtra(SearchManager.QUERY, action.query)
+                            .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                    "Iščem ${action.query} na Spotifyju."
+                }
+
+                // Privzeto (tudi brez navedene aplikacije) cilja YouTube Music, ki ob
+                // play-from-search samodejno zaigra; navadni YouTube le odpre iskanje,
+                // splet je zadnja rezerva. Generični intent brez paketa na HyperOS
+                // pogosto ne naredi ničesar vidnega.
+                else -> {
                     try {
                         ctx.startActivity(
                             Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
@@ -148,27 +162,6 @@ object Actions {
                             "Iščem ${action.query} na YouTube."
                         }
                     }
-                }
-
-                "spotify" -> {
-                    ctx.startActivity(
-                        Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
-                            .setPackage("com.spotify.music")
-                            .putExtra(SearchManager.QUERY, action.query)
-                            .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                    "Iščem ${action.query} na Spotifyju."
-                }
-
-                else -> {
-                    ctx.startActivity(
-                        Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
-                            .putExtra(SearchManager.QUERY, action.query)
-                            .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                    "Iščem ${action.query}."
                 }
             }
 

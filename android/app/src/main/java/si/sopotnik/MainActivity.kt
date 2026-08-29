@@ -9,12 +9,17 @@ import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
 
 class MainActivity : Activity(), SessionService.UiListener {
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var notifWarned = false
 
     private lateinit var statusText: TextView
     private lateinit var partialText: TextView
@@ -74,10 +79,20 @@ class MainActivity : Activity(), SessionService.UiListener {
         service?.let { it.uiListener = this }
         // po vklopu dostopa do obvestil HyperOS storitve ne poveže vedno sam
         NotifListener.ensureBound(this)
+        if (!notifWarned) {
+            // obhod v ensureBound teče do ~2 s; preveri šele po njem
+            handler.postDelayed({
+                if (!notifWarned && NotifListener.accessGranted(this) && NotifListener.instance == null) {
+                    notifWarned = true
+                    onLine("⚙", "Poslušalec obvestil ni vezan — glej 🩺 Diagnostika obvestil v nastavitvah.")
+                }
+            }, 4_000)
+        }
     }
 
     override fun onDestroy() {
         service?.uiListener = null
+        handler.removeCallbacksAndMessages(null)
         runCatching { unbindService(connection) }
         super.onDestroy()
     }

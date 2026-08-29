@@ -65,6 +65,14 @@
             </intent-filter>
         </service>
 
+        <receiver
+            android:name=".DebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="si.sopotnik.DEBUG_DUMP" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".NotifListener"
             android:exported="false"
