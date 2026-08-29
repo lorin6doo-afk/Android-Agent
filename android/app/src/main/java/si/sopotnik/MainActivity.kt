@@ -43,6 +43,7 @@ class MainActivity : Activity(), SessionService.UiListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        Insets.pad(findViewById(R.id.root_main))
 
         statusText = findViewById(R.id.status_text)
         partialText = findViewById(R.id.partial_text)

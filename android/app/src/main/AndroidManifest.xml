@@ -21,7 +21,7 @@
     <application
         android:label="Sopotnik"
         android:icon="@drawable/ic_launcher"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight"
+        android:theme="@style/Theme.Sopotnik"
         android:allowBackup="false">
 
         <activity
@@ -38,7 +38,8 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
-            android:label="Sopotnik — nastavitve" />
+            android:label="Sopotnik — nastavitve"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".SessionService"

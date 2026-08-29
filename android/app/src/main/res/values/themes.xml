@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brez sistemske naslovne vrstice; naslove rišejo postavitve same,
+         sistemske robove (status bar, gumbi, tipkovnica) obravnava Insets.kt. -->
+    <style name="Theme.Sopotnik" parent="@android:style/Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

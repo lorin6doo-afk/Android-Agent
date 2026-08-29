@@ -29,6 +29,7 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        Insets.pad(findViewById(R.id.root_settings))
         prefs = Prefs(this)
 
         editUrl = findViewById(R.id.edit_url)
