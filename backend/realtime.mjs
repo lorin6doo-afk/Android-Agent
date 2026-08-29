@@ -64,7 +64,6 @@ export class RealtimeBridge {
     this.ws = new WebSocket(url, {
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
-        "OpenAI-Beta": "realtime=v1",
       },
     });
 
@@ -82,16 +81,29 @@ export class RealtimeBridge {
   }
 
   configure() {
+    // GA oblika /v1/realtime (beta »shape« je upokojen avgusta 2026).
     this.rtSend({
       type: "session.update",
       session: {
-        modalities: ["audio", "text"],
-        voice: this.voice,
+        type: "realtime",
+        output_modalities: ["audio"],
         instructions: INSTRUCTIONS,
-        input_audio_format: "pcm16",
-        output_audio_format: "pcm16",
-        input_audio_transcription: { model: "gpt-4o-mini-transcribe", language: "sl" },
-        turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 700 },
+        audio: {
+          input: {
+            format: { type: "audio/pcm", rate: 24000 },
+            transcription: { model: "gpt-4o-mini-transcribe", language: "sl" },
+            turn_detection: {
+              type: "server_vad",
+              silence_duration_ms: 700,
+              create_response: true,
+              interrupt_response: true,
+            },
+          },
+          output: {
+            format: { type: "audio/pcm", rate: 24000 },
+            voice: this.voice,
+          },
+        },
         tools: TOOLS,
         tool_choice: "auto",
       },
@@ -151,6 +163,7 @@ export class RealtimeBridge {
 
       // prepis uporabnika
       case "conversation.item.input_audio_transcription.completed":
+      case "conversation.item.input_audio_transcription.done":
         if (ev.transcript?.trim()) this.send({ t: "rt_user_text", text: ev.transcript.trim() });
         break;
 
