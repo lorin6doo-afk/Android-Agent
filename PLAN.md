@@ -111,6 +111,8 @@ Cilj: Android 14–16, zasebna (sideload) namestitev — Google Play politike na
 
 [`NotificationListenerService`](https://developer.android.com/reference/android/service/notification/NotificationListenerService) s posebnim dostopom »Dostop do obvestil« (uporabnik ga ročno vklopi v nastavitvah). Vidimo vsa obvestila, vključno z WhatsAppom (naslov, besedilo, akcije). **Omejitev od Androida 15:** obvestila, ki jih OS prepozna kot občutljiva (enkratne kode / 2FA), so za ne-sistemske poslušalce **redigirana** — pomočnik OTP kod ne bo videl, kar je za nas celo zaželeno. Običajna sporočila niso prizadeta.
 
+**🧪 Potrjeno na napravi (Android 16 / HyperOS 3):** za sideload namestitev je dostop do obvestil za »omejenimi nastavitvami« — pred vklopom je potreben enkratni odklep *Podatki o aplikaciji → ⋮ → Dovoli omejene nastavitve* (isti mehanizem, kot je v 4.3 predviden za `SEND_SMS`).
+
 ### 4.2 Odgovarjanje na sporočila (WhatsApp, Telegram, Signal …) — 🟡 🧪
 
 Deluje prek sprožitve **reply akcije obstoječega obvestila** (`RemoteInput` — isti kanal, kot ga uporabljajo pametne ure, Android Auto in Tasker): iz obvestila poiščemo akcijo z `RemoteInput`, vstavimo besedilo in sprožimo njen `PendingIntent`. Pogoji in tveganja:
