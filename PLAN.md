@@ -98,6 +98,8 @@ ChatGPT/Codex žetoni ne dajejo dostopa do `/v1/audio/*` API-jev. Strategija:
 - **nadgradnja (nekaj € / mesec):** ločen OpenAI API ključ za `gpt-4o-mini-transcribe` (~0,003 $/min) in mini-TTS — opazno boljša slovenščina; smiselno šele, če faza 0 pokaže, da Google STT ne zadošča,
 - Codexov eksperimentalni *realtime voice* način obstaja, a je interna funkcija TUI, ne API — samo spremljamo.
 
+**🧪 Preverjeno (29. 8. 2026, Codex 0.150.1):** Codexov realtime glasovni način je prek `app-server` protokola **tehnično dosegljiv** (websocket transport, PCM zvok kot JSON-RPC koščki, nastavljiva navodila/persona in 19 glasov; proba: `backend/realtime-probe.mjs`), vendar jedro izrecno zahteva **API ključ** — »realtime conversation requires API key auth« — naročniška ChatGPT prijava zanj (še) ne zadošča. Lepši glas torej ostaja plačljiva izbira: (a) samo TTS prek `gpt-4o-mini-tts` (red velikosti 1–3 €/mesec pri zmerni rabi), (b) polni realtime govor-v-govor (~0,02–0,05 $/min). Funkcija je »under development« — probo velja ponoviti ob nadgradnjah Codexa, ker se lahko odpre tudi za naročnino.
+
 ---
 
 ## 4. Izvedljivost Android funkcij (podrobno)
