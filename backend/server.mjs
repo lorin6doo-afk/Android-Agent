@@ -23,6 +23,10 @@ if (existsSync(envFile)) {
   }
 }
 
+// dvigni ob vsaki vsebinski spremembi backenda — izpiše se ob zagonu, da je
+// na Macu na pogled jasno, katera koda teče (tail backend/gateway.log)
+const GW_VERSION = "0.3.5";
+
 const PORT = Number(process.env.PORT ?? 8787);
 const TOKEN = process.env.SOPOTNIK_TOKEN ?? "";
 const MODEL = process.env.SOPOTNIK_MODEL ?? "gpt-5.6-luna";
@@ -202,5 +206,5 @@ const heartbeat = setInterval(() => {
 }, 30_000);
 wss.on("close", () => clearInterval(heartbeat));
 
-console.log(`Sopotnik gateway posluša na vratih ${PORT} (model: ${MODEL || "privzeti"}, reasoning: ${EFFORT})`);
+console.log(`Sopotnik gateway v${GW_VERSION} posluša na vratih ${PORT} (model: ${MODEL || "privzeti"}, reasoning: ${EFFORT})`);
 console.log("Telefon nastavi na  ws://<tailscale-ime-naprave>:%d  z istim žetonom.", PORT);
