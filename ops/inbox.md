@@ -41,8 +41,15 @@ V poročilu jasno loči: kateri serial je uporabnikov Xiaomi 14 in kateri je TES
    »poslušalec obvestil POVEZAN«, »obhod: …« in vse »DEBUG_DUMP: …« (dostop, vezan, števili obvestil).
 
 ## T4 — dokončanje priprave testnega telefona (po vklopu »Namestitev prek USB«)
-Uporabnik bo na TESTNEM telefonu vklopil: Nastavitve → Razvijalske možnosti → »Namestitev prek USB«
-(MIUI lahko ob tem zahteva prijavo v Mi račun in vstavljeno kartico SIM).
+Uporabnik je trenutno NA DALJAVO, zato stikalo najprej poskusi vklopiti SAM prek adb + posnetkov zaslona:
+0. `adb -s <testni> shell am start -a android.settings.APPLICATION_DEVELOPMENT_SETTINGS`,
+   nato `adb -s <testni> exec-out screencap -p > /tmp/testni.png` in si posnetek OGLEJ (Read).
+   Poišči »Namestitev prek USB« / »Install via USB« (po potrebi se pomikaj:
+   `adb shell input swipe 500 1600 500 600`), stikalo tapni (`adb shell input tap X Y`),
+   potrpežljivo potrdi morebitni MIUI dialog z odštevalnikom (po ~11 s znova screencap + tap na potrditev).
+   Po vsakem koraku preveri stanje z novim posnetkom. Če MIUI zahteva Mi račun ali SIM,
+   tega NE poskušaj urejati — v poročilu navedi točno besedilo dialoga in pusti uporabniku.
+(Ročna pot, če samodejna ne uspe: uporabnik doma vklopi Nastavitve → Razvijalske možnosti → »Namestitev prek USB«.)
 1. Poskusi `adb -s <testni> install -r builds/sopotnik-debug.apk`; če spodleti, poskušaj znova
    vsakih 60 s, skupno do 15 minut. Izpiši celoten razlog ob prvem in zadnjem neuspehu.
 2. Ko namestitev uspe, nadaljuj s koraki 2–7 iz naloge T3 (allow_listener, logcat -c, am start,
