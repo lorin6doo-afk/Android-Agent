@@ -74,6 +74,17 @@ telefonovega upravitelja datotek (ta poti ne omejuje):
 6. Poročaj kot v T4 (zadnji stavek »OPS T4 KONČANO: …« z APK verzijo, listener stanjem,
    N/M, napravami in gateway verzijo). Če tudi ta pot spodleti, navedi TOČNO besedilo napake.
 
+## T4c — namestitev na testnem telefonu je do fizičnega obiska USTAVLJENA
+Ugotovitev T4/T4b: MIUI brez stikala »Odpravljanje napak USB (varnostne nastavitve)« blokira
+`input tap` (SecurityException INJECT_EVENTS) in `pm install` — obojega se na daljavo NE DA vklopiti.
+APK je že potisnjen na /sdcard/Download/sopotnik.apk. Namestitve NE poskušaj več; počakaj.
+Ko bo uporabnik fizično pri telefonu, bo: (1) tapnil sopotnik.apk v mapi Prenosi in ga namestil,
+ali še bolje (2) začasno vstavil SIM, se prijavil v Mi račun in vklopil OBE stikali:
+»Namestitev prek USB« in »Odpravljanje napak USB (varnostne nastavitve)« — potem lahko SIM odstrani,
+nastavitvi ostaneta in telefon postane polno avtomatiziran (install + tapkanje prek adb).
+Do takrat na testnem telefonu smeš uporabljati le: screencap, logcat, am start/broadcast,
+cmd notification post — brez input tap/swipe in brez install poskusov.
+
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
 `while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`
