@@ -60,6 +60,8 @@ const wss = new WebSocketServer({ port: PORT });
 
 wss.on("connection", (ws, req) => {
   const peer = req.socket.remoteAddress;
+  ws.isAlive = true;
+  ws.on("pong", () => { ws.isAlive = true; });
   let authed = false;
   let thread = null;
   let firstTurn = true;
@@ -100,7 +102,8 @@ wss.on("connection", (ws, req) => {
       return;
     }
     if (msg.t === "rt_audio") { rt?.appendAudio(msg.data); return; }
-    if (msg.t === "rt_action_result") { rt?.toolResult(msg.callId, msg.result); return; }
+    // telefon pošilja izid orodja v polju "output" (starejše različice "result")
+    if (msg.t === "rt_action_result") { rt?.toolResult(msg.callId, msg.output ?? msg.result); return; }
     if (msg.t === "rt_stop") { rt?.stop(); rt = null; return; }
 
     if (msg.t === "reset") { thread = null; firstTurn = true; return; }
@@ -187,6 +190,17 @@ wss.on("connection", (ws, req) => {
     console.log(`[${new Date().toISOString()}] odklop ${peer}`);
   });
 });
+
+// Utrip: povezava, ki je umrla brez slovesa (izpad WiFi, spanje), bi sicer še dolgo
+// držala odprto Realtime sejo — vsakih 30 s jo preverimo in mrtvo pozapremo.
+const heartbeat = setInterval(() => {
+  for (const c of wss.clients) {
+    if (c.isAlive === false) { c.terminate(); continue; }
+    c.isAlive = false;
+    try { c.ping(); } catch { /* povezava že odhaja */ }
+  }
+}, 30_000);
+wss.on("close", () => clearInterval(heartbeat));
 
 console.log(`Sopotnik gateway posluša na vratih ${PORT} (model: ${MODEL || "privzeti"}, reasoning: ${EFFORT})`);
 console.log("Telefon nastavi na  ws://<tailscale-ime-naprave>:%d  z istim žetonom.", PORT);

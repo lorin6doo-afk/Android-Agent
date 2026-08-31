@@ -22,6 +22,10 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
         fun onTurnDone(say: String, actionsJson: String?)
         fun onAgentError(message: String)
         fun onRtMessage(msg: JSONObject) {}
+
+        /** Povezava je padla (ne ob shutdown). Vrni true, če boš sprožil ponovno povezavo
+         *  in naj se onAgentError NE kliče. */
+        fun onAgentDropped(message: String): Boolean = false
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -44,14 +48,19 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
 
     val isReady: Boolean get() = ready
 
-    /** Surovo sporočilo (Sven Live rt_* protokol); pred pripravljenostjo se uvrsti v čakalno vrsto. */
+    /** Surovo sporočilo (Sven Live rt_* protokol); pred pripravljenostjo se uvrsti v čakalno
+     *  vrsto. Zvočni paketki (rt_audio) se med izpadom zavržejo — zastarel zvok je neuporaben,
+     *  kopičenje pa bi ob obnovi poplavilo strežnik. */
     fun sendJson(obj: JSONObject) {
         handler.post {
             val s = obj.toString()
-            if (ready) ws?.send(s)
-            else {
-                rawQueue.add(s)
-                connect()
+            when {
+                ready -> ws?.send(s)
+                obj.optString("t") == "rt_audio" -> Unit
+                else -> {
+                    rawQueue.add(s)
+                    connect()
+                }
             }
         }
     }
@@ -131,8 +140,10 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
         pendingTurn = null
         rawQueue.clear()
         handler.removeCallbacks(pendingTimeout)
-        if (!shuttingDown) cb.onAgentError(message)
+        val wasShutdown = shuttingDown
         shuttingDown = false
+        if (wasShutdown) return
+        if (!cb.onAgentDropped(message)) cb.onAgentError(message)
     }
 
     fun resetConversation() {

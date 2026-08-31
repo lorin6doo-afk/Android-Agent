@@ -394,6 +394,12 @@ class SessionService : Service(), SpeechIO.Callback, AgentClient.Callback {
         flushSentences(force = true)
     }
 
+    override fun onAgentDropped(message: String): Boolean {
+        // v živem načinu padec povezave najprej rešuje LiveSession s ponovnim povezovanjem
+        if (state != SessionState.LIVE) return false
+        return live?.scheduleReconnect() == true
+    }
+
     override fun onAgentError(message: String) {
         if (state == SessionState.LIVE) {
             uiListener?.onLine("⚙", message)

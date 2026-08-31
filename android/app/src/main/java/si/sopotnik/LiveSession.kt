@@ -45,6 +45,8 @@ class LiveSession(
     private var lastFound: ContactMatch? = null
     private var lastNotifs: List<NotifEntry> = emptyList()
     private var lastNotifsAt = 0L
+    private var currentRate = 24_000
+    private var reconnects = 0
 
     private val idleTimeout = Runnable {
         onLine("⚙", "2 minuti tišine — končujem živo sejo.")
@@ -101,6 +103,7 @@ class LiveSession(
         // da je ob prvem »kaj je novega« seznam že na voljo
         NotifListener.ensureBound(service)
 
+        currentRate = rate
         agent.sendJson(JSONObject().put("t", "rt_start").put("rate", rate))
 
         rec.startRecording()
@@ -119,9 +122,32 @@ class LiveSession(
         onLine("⚙", "Sven Live: povezujem …")
     }
 
+    /**
+     * WS do backenda je padel: mikrofon in seja ostaneta živa, povezavo pa poskusimo
+     * obnoviti do 4× (1/2/4/8 s). Ob uspehu backend odpre svežo Realtime sejo — Sven
+     * si prejšnjih stavkov ne zapomni, pogovor pa se nadaljuje brez ponovnega zagona.
+     * Vrne false, ko odnehamo (klicatelj naj gre po običajni poti napake).
+     */
+    fun scheduleReconnect(): Boolean {
+        if (ended.get() || reconnects >= 4) return false
+        reconnects++
+        val delayMs = 500L shl reconnects // 1 s, 2 s, 4 s, 8 s
+        onLine("⚙", "Povezava z backendom prekinjena — znova povezujem (poskus $reconnects/4) …")
+        handler.postDelayed({
+            if (!ended.get()) agent.sendJson(JSONObject().put("t", "rt_start").put("rate", currentRate))
+        }, delayMs)
+        return true
+    }
+
     fun onRt(msg: JSONObject) {
         when (msg.optString("t")) {
-            "rt_ready" -> onLine("⚙", "Sven Live pripravljen — kar govori.")
+            "rt_ready" -> {
+                touchActivity()
+                if (reconnects > 0) {
+                    reconnects = 0
+                    onLine("⚙", "Povezava obnovljena — kar nadaljuj.")
+                } else onLine("⚙", "Sven Live pripravljen — kar govori.")
+            }
 
             "rt_audio" -> {
                 val bytes = runCatching { Base64.decode(msg.optString("data"), Base64.NO_WRAP) }.getOrNull() ?: return
@@ -315,7 +341,8 @@ class LiveSession(
             track = null
         }
         playExec.shutdown()
-        agent.sendJson(JSONObject().put("t", "rt_stop"))
+        // rt_stop le, če povezava stoji — sicer bi zgolj zaradi slovesa znova vzpostavljali WS
+        if (agent.isReady) agent.sendJson(JSONObject().put("t", "rt_stop"))
         if (notify) onEnd()
     }
 }
