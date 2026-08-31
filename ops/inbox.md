@@ -1,0 +1,47 @@
+# Sopotnik — ops inbox (oblak → Mac)
+
+Navodila oblačne razvojne seje za lokalnega operaterja (Claude seja na Mac mini).
+Vrinjena sporočila (fire_trigger) do lokalnih sej trenutno ne pridejo skozi, zato
+ta datoteka služi kot enosmerni kanal: oblak jo spreminja s pushi, Mac jo bere.
+
+## Pravila za operaterja
+- Naloge imajo ID (T1, T2 …); najnovejše so spodaj. Izvedi vse, ki jih še ni v `ops/done.local`.
+- Po vsaki izvedeni nalogi dopiši njen ID v `ops/done.local` (ena vrstica = en ID).
+  Datoteka je lokalna — je v .gitignore in je NE commitaš.
+- NE commitaj in NE pushaj ničesar (kodo in to datoteko ureja izključno oblačna seja).
+- NE uporabljaj interaktivnih vprašanj (AskUserQuestion) — terminala morda nihče ne gleda.
+- Vse ugotovitve in surove izpise objavi v pogovor; ZADNJI stavek odgovora naj bo:
+  »OPS <ID-ji> KONČANO: <enovrstični povzetek>« — oblačna seja ga prebere iz povzetka seje.
+- Po obdelavi nalog vedno znova zaženi stražarja (glej dno datoteke).
+
+## T1 — identifikacija USB naprav
+`adb devices -l`, nato za VSAKO napravo (`adb -s <serial>`):
+`getprop ro.product.manufacturer`, `getprop ro.product.model`, `getprop ro.product.marketname`,
+`getprop ro.build.version.release`, `settings get global device_name`.
+Če je naprava »unauthorized«: v pogovor napiši, naj uporabnik na tistem telefonu potrdi
+»Dovoli odpravljanje napak USB«, in ponovi čez ~30 s (do 3×).
+V poročilu jasno loči: kateri serial je uporabnikov Xiaomi 14 in kateri je TESTNI telefon.
+
+## T2 — gateway na v0.3.5
+`tail -2 backend/gateway.log` — če ne piše »Sopotnik gateway v0.3.5«, poženi
+`launchctl kickstart -k gui/$UID/si.sopotnik.gateway`, počakaj 2 s in spet `tail -2 backend/gateway.log`.
+(git pull je ob branju te datoteke že narejen.)
+
+## T3 — priprava TESTNEGA telefona (tisti, ki NI uporabnikov Xiaomi 14)
+1. `adb -s <testni> install -r builds/sopotnik-debug.apk`
+   in `adb -s <testni> shell dumpsys package si.sopotnik | grep -m1 versionName`
+2. Dostop do obvestil brez ročnih tapov:
+   `adb -s <testni> shell cmd notification allow_listener si.sopotnik/si.sopotnik.NotifListener`
+   (če ukaz javi napako, jo navedi v poročilu — potem bo dostop treba vklopiti ročno na telefonu)
+3. `adb -s <testni> logcat -c`
+4. `adb -s <testni> shell am start -n si.sopotnik/.MainActivity` in počakaj 6 s
+5. `adb -s <testni> shell "cmd notification post -t 'Test Sopotnik' TagX 'Testno obvestilo'"` in počakaj 3 s
+6. `adb -s <testni> shell am broadcast -a si.sopotnik.DEBUG_DUMP si.sopotnik` in počakaj 2 s
+7. `adb -s <testni> logcat -v time -s Sopotnik:* -d` → v poročilo daj vrstice
+   »poslušalec obvestil POVEZAN«, »obhod: …« in vse »DEBUG_DUMP: …« (dostop, vezan, števili obvestil).
+
+## Stražar (po vsaki obdelavi nalog ga znova zaženi)
+V ozadju (Bash, run_in_background):
+`while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`
+Ko se stražar konča (nov commit v veji): `git pull --ff-only`, znova preberi to datoteko,
+izvedi naloge, ki jih ni v `ops/done.local`, in stražarja ponovno zaženi.
