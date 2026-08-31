@@ -40,6 +40,18 @@ V poročilu jasno loči: kateri serial je uporabnikov Xiaomi 14 in kateri je TES
 7. `adb -s <testni> logcat -v time -s Sopotnik:* -d` → v poročilo daj vrstice
    »poslušalec obvestil POVEZAN«, »obhod: …« in vse »DEBUG_DUMP: …« (dostop, vezan, števili obvestil).
 
+## T4 — dokončanje priprave testnega telefona (po vklopu »Namestitev prek USB«)
+Uporabnik bo na TESTNEM telefonu vklopil: Nastavitve → Razvijalske možnosti → »Namestitev prek USB«
+(MIUI lahko ob tem zahteva prijavo v Mi račun in vstavljeno kartico SIM).
+1. Poskusi `adb -s <testni> install -r builds/sopotnik-debug.apk`; če spodleti, poskušaj znova
+   vsakih 60 s, skupno do 15 minut. Izpiši celoten razlog ob prvem in zadnjem neuspehu.
+2. Ko namestitev uspe, nadaljuj s koraki 2–7 iz naloge T3 (allow_listener, logcat -c, am start,
+   testno obvestilo, DEBUG_DUMP, izpis logcata).
+3. V istem odgovoru ponovi še kratko identifikacijo naprav iz T1 (serial → znamka, model, ime,
+   Android) in stanje gatewaya iz T2 (verzija iz backend/gateway.log).
+4. ZADNJI stavek: »OPS T4 KONČANO: APK <verzija>; listener vezan <da/ne>; obvestil <N/M>;
+   NAPRAVE: <…>; GATEWAY: v<…>« oziroma »OPS T4 BLOKIRANO: <razlog>«.
+
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
 `while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`
