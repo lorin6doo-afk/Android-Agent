@@ -59,6 +59,21 @@ Uporabnik je trenutno NA DALJAVO, zato stikalo najprej poskusi vklopiti SAM prek
 4. ZADNJI stavek: »OPS T4 KONČANO: APK <verzija>; listener vezan <da/ne>; obvestil <N/M>;
    NAPRAVE: <…>; GATEWAY: v<…>« oziroma »OPS T4 BLOKIRANO: <razlog>«.
 
+## T4b — namestitev BREZ stikala »Namestitev prek USB« (SIM ni potreben!)
+MIUI za vklop stikala zahteva SIM, ki ga v testnem telefonu ni — zato namesti prek
+telefonovega upravitelja datotek (ta poti ne omejuje):
+1. `adb -s <testni> push builds/sopotnik-debug.apk /sdcard/Download/sopotnik.apk`
+2. Ugotovi paket upravitelja datotek: `adb -s <testni> shell pm list packages | grep -iE "fileexplorer|filemanager|files|documentsui"`
+   in mu vnaprej dovoli nameščanje: `adb -s <testni> shell appops set <paket> REQUEST_INSTALL_PACKAGES allow`
+3. Odpri upravitelja datotek (`adb shell monkey -p <paket> 1` ali am start), nato s
+   screencap + `input tap` navigiraj: mapa Prenosi/Download → sopotnik.apk → »Namesti« →
+   potrdi morebitne dialoge. Po VSAKEM tapu nov screencap in preveri stanje.
+4. Preveri namestitev: `adb -s <testni> shell dumpsys package si.sopotnik | grep -m1 versionName`
+   (pričakovano 0.3.5-faza2 — builds/ je po git pullu svež).
+5. Nadaljuj s koraki 2–7 iz T3 (allow_listener, testno obvestilo, DEBUG_DUMP, logcat).
+6. Poročaj kot v T4 (zadnji stavek »OPS T4 KONČANO: …« z APK verzijo, listener stanjem,
+   N/M, napravami in gateway verzijo). Če tudi ta pot spodleti, navedi TOČNO besedilo napake.
+
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
 `while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`
