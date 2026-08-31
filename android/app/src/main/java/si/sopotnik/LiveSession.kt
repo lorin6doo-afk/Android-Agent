@@ -97,6 +97,10 @@ class LiveSession(
             aec = AcousticEchoCanceler.create(rec.audioSessionId)?.also { it.enabled = true }
         }
 
+        // vezava poslušalca obvestil naj steče že zdaj (obhod traja do ~2,5 s),
+        // da je ob prvem »kaj je novega« seznam že na voljo
+        NotifListener.ensureBound(service)
+
         agent.sendJson(JSONObject().put("t", "rt_start").put("rate", rate))
 
         rec.startRecording()
@@ -163,7 +167,40 @@ class LiveSession(
         agent.sendJson(JSONObject().put("t", "rt_action_result").put("callId", callId).put("output", output))
     }
 
+    /**
+     * Poslušalec obvestil je lahko tik po zagonu še nevezan (obhod v ensureBound
+     * traja do ~2,5 s), zato na vezavo počakamo asinhrono in orodju odgovorimo
+     * šele nato — Realtime API na izid orodja mirno počaka.
+     */
+    private fun readNotificationsAsync(callId: String, attempt: Int = 0) {
+        NotifListener.ensureBound(service)
+        val list = NotifListener.snapshot()
+        if (list == null && attempt < 10 && running.get()) {
+            handler.postDelayed({ readNotificationsAsync(callId, attempt + 1) }, 400)
+            return
+        }
+        val out = when {
+            list == null -> "Dostopa do obvestil ni uspelo vzpostaviti. Povej uporabniku, naj v nastavitvah Sopotnika pritisne 🩺 Diagnostika obvestil."
+            list.isEmpty() -> "Ni aktivnih obvestil."
+            else -> {
+                lastNotifs = list
+                lastNotifsAt = System.currentTimeMillis()
+                AuditLog.append(service, "obvestila", "prebranih ${list.size} (live)", "GREEN", "ok")
+                list.mapIndexed { i, n ->
+                    "${i + 1}) [${n.app}] ${n.title}: ${n.text.take(160)}${if (n.canReply) " [odgovor možen]" else ""}"
+                }.joinToString("\n")
+            }
+        }
+        Log.i("Sopotnik", "orodje read_notifications (poskus $attempt) -> ${out.take(120)}")
+        result(callId, out)
+    }
+
     private fun handleTool(callId: String, name: String, args: JSONObject) {
+        if (name == "read_notifications") {
+            touchActivity()
+            readNotificationsAsync(callId)
+            return
+        }
         val out: String = when (name) {
             "get_time" -> {
                 val c = Calendar.getInstance()
@@ -227,23 +264,6 @@ class LiveSession(
 
             "open_app" -> Actions.execute(service, Action.OpenApp(args.optString("name")))
 
-            "read_notifications" -> {
-                NotifListener.ensureBound(service)
-                val list = NotifListener.snapshot()
-                when {
-                    list == null -> "Dostop do obvestil še ni pripravljen — odpri aplikacijo Sopotnik in poskusi znova."
-                    list.isEmpty() -> "Ni aktivnih obvestil."
-                    else -> {
-                        lastNotifs = list
-                        lastNotifsAt = System.currentTimeMillis()
-                        AuditLog.append(service, "obvestila", "prebranih ${list.size} (live)", "GREEN", "ok")
-                        list.mapIndexed { i, n ->
-                            "${i + 1}) [${n.app}] ${n.title}: ${n.text.take(160)}${if (n.canReply) " [odgovor možen]" else ""}"
-                        }.joinToString("\n")
-                    }
-                }
-            }
-
             "send_reply" -> {
                 val idx = args.optInt("number") - 1
                 val text = args.optString("text")
@@ -273,7 +293,7 @@ class LiveSession(
         }
 
         Log.i("Sopotnik", "orodje $name($args) -> $out")
-        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "read_notifications", "send_reply")
+        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply")
         if (name !in selfAudited) {
             AuditLog.append(service, "dejanje", "$name ${args} (live)", "GREEN", out)
         }
