@@ -8,7 +8,9 @@ ta datoteka služi kot enosmerni kanal: oblak jo spreminja s pushi, Mac jo bere.
 - Naloge imajo ID (T1, T2 …); najnovejše so spodaj. Izvedi vse, ki jih še ni v `ops/done.local`.
 - Po vsaki izvedeni nalogi dopiši njen ID v `ops/done.local` (ena vrstica = en ID).
   Datoteka je lokalna — je v .gitignore in je NE commitaš.
-- NE commitaj in NE pushaj ničesar (kodo in to datoteko ureja izključno oblačna seja).
+- NE commitaj in NE pushaj ničesar (kodo in to datoteko ureja izključno oblačna seja),
+  z EDINO izjemo: poročila o rezultatih v `ops/results/*.md` — commit sporočilo
+  »ops: rezultati [skip ci]«, pred pushem OBVEZNO `git pull --rebase`. Nič drugega.
 - NE uporabljaj interaktivnih vprašanj (AskUserQuestion) — terminala morda nihče ne gleda.
 - Vse ugotovitve in surove izpise objavi v pogovor; ZADNJI stavek odgovora naj bo:
   »OPS <ID-ji> KONČANO: <enovrstični povzetek>« — oblačna seja ga prebere iz povzetka seje.
@@ -179,6 +181,16 @@ Tvoje poročilo »7/15, sort + threshold« je nastalo pred izgradnjo 0.3.10 — 
    stike ustvari po postopku iz T10, točka 1).
 3. Izvedi VSEH 15 poizvedb iz T10 (točka 3) in oceni PASS/FAIL po tam navedenih pričakovanjih.
 4. ZADNJI stavek natanko: »OPS T10b KONČANO: APK <verzija>; <N>/15 PASS« (ob neuspehu BLOKIRANO + razlog).
+
+## T10c — skriptirana baterija + poročilo v repo (nadomesti T10b, če ta še ni tekel na 0.3.10)
+1. Če `builds/sopotnik-debug.apk` po `git pull` ni nameščen na testnem telefonu kot
+   0.3.10-faza2 (`dumpsys package si.sopotnik | grep versionName`), ga namesti (`install -r`).
+2. Poženi: `bash ops/t10.sh <serial-testnega-telefona>` in CELOTEN izpis shrani v
+   `ops/results/t10c.md` (dodaj še vrstico z datumom in serijsko naprave).
+3. Commitaj in pushni SAMO to datoteko po izjemi iz pravil (»ops: rezultati [skip ci]«,
+   prej `git pull --rebase`).
+4. ZADNJI stavek: »OPS T10c KONČANO: APK <verzija>; izpis commitan« (ali BLOKIRANO + razlog).
+PASS/FAIL presoja NI tvoja naloga — oceni jo oblačna seja iz surovega izpisa.
 
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
