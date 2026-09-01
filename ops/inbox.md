@@ -85,6 +85,28 @@ nastavitvi ostaneta in telefon postane polno avtomatiziran (install + tapkanje p
 Do takrat na testnem telefonu smeš uporabljati le: screencap, logcat, am start/broadcast,
 cmd notification post — brez input tap/swipe in brez install poskusov.
 
+## T5 — testni telefon ODKLENJEN: izvedi celotno pripravo (T4c ne velja več)
+Uporabnik je pravkar: vstavil SIM, vklopil »Namestitev prek USB« in verjetno tudi
+»Odpravljanje napak USB (varnostne nastavitve)«. Telefon je na USB. Izvedi:
+1. `adb devices -l` — potrdi, da je testni telefon viden (če je »unauthorized«, poročaj).
+2. `adb -s <testni> install -r builds/sopotnik-debug.apk`
+   nato `adb -s <testni> shell dumpsys package si.sopotnik | grep -m1 versionName` (pričakovano 0.3.5-faza2).
+3. Preveri, ali zdaj deluje vnos prek adb: `adb -s <testni> shell input keyevent 82` —
+   če vrže SecurityException INJECT_EVENTS, v poročilo zapiši, da drugo stikalo
+   (»Odpravljanje napak USB (varnostne nastavitve)«) še NI vklopljeno — uporabnik naj ga vklopi,
+   DOKLER JE SIM ŠE VSTAVLJEN.
+4. Dostop do obvestil: `adb -s <testni> shell cmd notification allow_listener si.sopotnik/si.sopotnik.NotifListener`
+5. `adb -s <testni> logcat -c`; `adb -s <testni> shell am start -n si.sopotnik/.MainActivity`; počakaj 6 s.
+6. `adb -s <testni> shell "cmd notification post -t 'Test Sopotnik' TagX 'Testno obvestilo'"`; počakaj 3 s.
+7. `adb -s <testni> shell am broadcast -a si.sopotnik.DEBUG_DUMP si.sopotnik`; počakaj 2 s.
+8. `adb -s <testni> logcat -v time -s Sopotnik:* -d` → v poročilo VSE vrstice
+   (»poslušalec obvestil POVEZAN«, »obhod: …«, »DEBUG_DUMP: …«).
+9. Ponovi še identifikacijo naprav (serial → znamka, model, Android) in verzijo gatewaya
+   (`tail -2 backend/gateway.log`).
+10. ZADNJI stavek natanko: »OPS T5 KONČANO: APK <verzija>; listener vezan <da/ne>;
+    obvestil <N/M>; inject <deluje/blokiran>; NAPRAVE: <…>; GATEWAY: v<…>«
+    oziroma »OPS T5 BLOKIRANO: <točen razlog>«.
+
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
 `while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`
