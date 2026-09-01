@@ -216,6 +216,67 @@ class LiveSession(
     private fun recipientMatches(claimed: String, entry: NotifEntry): Boolean =
         namesMatch(claimed, entry.title)
 
+    /**
+     * Odpre pogovor s stikom iz imenika — prek SMS aplikacije (smsto:, z ali brez
+     * pripravljenega besedila) ali WhatsAppa (wa.me). Pošteno javi tudi Androidovo
+     * omejitev: odpiranje zaslona iz ozadja je blokirano, če Sopotnik nima
+     * dovoljenja »Prikaz nad drugimi aplikacijami« in je spredaj druga aplikacija.
+     */
+    private fun openOrCompose(name: String, via: String, text: String?): String {
+        if (via != "sms" && via != "whatsapp")
+            return "Povej kanal: 'sms' ali 'whatsapp'. (»Aplikacija sporočila« pomeni sms.)"
+        val cands = try {
+            Actions.resolveContacts(service, name)
+        } catch (e: SecurityException) {
+            return "Dovoljenje za branje stikov ni podeljeno — povej uporabniku, naj ga dodeli v nastavitvah Sopotnika."
+        }
+        val top = cands.firstOrNull()
+            ?: return "Stika '$name' ni v imeniku. Poskusi znova SAMO z osnovnim imenom."
+        if (top.score < 80 || (cands.size > 1 && top.score < cands[1].score + 15 && top.score < 100))
+            return "Nisem prepričan, koga misliš: ${cands.joinToString("; ") { it.match.name }}. Ustno preveri in znova pokliči orodje z natančnim imenom."
+
+        val m = top.match
+        val intent: android.content.Intent
+        val kje: String
+        if (via == "sms") {
+            intent = android.content.Intent(
+                android.content.Intent.ACTION_SENDTO,
+                android.net.Uri.parse("smsto:" + android.net.Uri.encode(m.number))
+            )
+            if (!text.isNullOrBlank()) intent.putExtra("sms_body", text)
+            kje = "SMS aplikaciji"
+        } else {
+            val digits = m.number.filter { it.isDigit() }
+            val intl = when {
+                m.number.trimStart().startsWith("+") -> digits
+                digits.startsWith("00") -> digits.drop(2)
+                digits.startsWith("0") -> "386" + digits.drop(1)
+                else -> digits
+            }
+            if (intl.length < 8)
+                return "Številka stika ${m.name} (${m.number}) ni videti veljavna mobilna številka."
+            val url = "https://wa.me/$intl" + if (!text.isNullOrBlank()) "?text=" + android.net.Uri.encode(text) else ""
+            intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                .setPackage("com.whatsapp")
+            kje = "WhatsAppu"
+        }
+
+        val opened = runCatching {
+            service.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.isSuccess
+        if (!opened) return "Aplikacije ni mogoče odpreti (${if (via == "sms") "SMS" else "WhatsApp"})."
+
+        val overlayWarn = if (android.provider.Settings.canDrawOverlays(service)) ""
+        else " POZOR: če uporabnik zaslona NE vidi, ga je Android blokiral, ker je spredaj druga aplikacija — povej mu, naj v nastavitvah Sopotnika vklopi »Prikaz nad drugimi aplikacijami«, in poskusi znova."
+
+        val dejanje = if (text.isNullOrBlank()) "odprt pogovor" else "osnutek (pošlje uporabnik sam)"
+        AuditLog.append(service, "dejanje", "$dejanje v $kje -> ${m.name}${if (text.isNullOrBlank()) "" else ": $text"}", "GREEN", "ok")
+        return if (text.isNullOrBlank())
+            "V $kje je odprt pogovor z ${m.name}.$overlayWarn"
+        else
+            "V $kje je odprt pogovor z ${m.name} s pripravljenim besedilom — sporočilo NI poslano, uporabnik pritisne Pošlji sam; to mu povej.$overlayWarn"
+    }
+
     private fun result(callId: String, output: String) {
         agent.sendJson(JSONObject().put("t", "rt_action_result").put("callId", callId).put("output", output))
     }
@@ -355,13 +416,22 @@ class LiveSession(
 
             "open_notification" -> {
                 val idx = args.optInt("number") - 1
+                val claimed = args.optString("recipient")
                 val fresh = System.currentTimeMillis() - lastNotifsAt < 5 * 60_000
                 val entry = lastNotifs.getOrNull(idx)
                 when {
                     entry == null || !fresh -> "Najprej znova preberi obvestila z read_notifications."
+                    claimed.isNotBlank() && !namesMatch(claimed, entry.title) ->
+                        "USTAVLJENO: obvestilo številka ${idx + 1} pripada »${entry.title}« (${entry.app}), NE »$claimed«. Nič ni odprto — preveri seznam in izberi pravo številko."
                     NotifListener.open(entry.key) -> "Odprto na zaslonu telefona: ${entry.app} — ${entry.title}."
                     else -> "Tega obvestila ni mogoče odpreti — morda je medtem izginilo."
                 }
+            }
+
+            "open_conversation" -> {
+                val name = args.optString("contact")
+                val via = args.optString("via")
+                openOrCompose(name, via, text = null)
             }
 
             "send_reply" -> {
@@ -393,48 +463,9 @@ class LiveSession(
             "compose_message" -> {
                 val name = args.optString("contact")
                 val text = args.optString("text")
-                val cands = try {
-                    Actions.resolveContacts(service, name)
-                } catch (e: SecurityException) {
-                    null
-                }
-                val top = cands?.firstOrNull()
-                when {
-                    text.isBlank() -> "Manjka besedilo sporočila."
-                    cands == null -> "Dovoljenje za branje stikov ni podeljeno — povej uporabniku, naj ga dodeli v nastavitvah Sopotnika."
-                    top == null -> "Stika '$name' ni v imeniku. Poskusi znova SAMO z osnovnim imenom."
-                    top.score < 80 || (cands.size > 1 && top.score < cands[1].score + 15 && top.score < 100) ->
-                        "Nisem prepričan, koga misliš: ${cands.joinToString("; ") { it.match.name }}. Ustno preveri in znova pokliči compose_message z natančnim imenom."
-                    else -> {
-                        val m = top.match
-                        val digits = m.number.filter { it.isDigit() }
-                        val intl = when {
-                            m.number.trimStart().startsWith("+") -> digits
-                            digits.startsWith("00") -> digits.drop(2)
-                            digits.startsWith("0") -> "386" + digits.drop(1)
-                            else -> digits
-                        }
-                        if (intl.length < 8) {
-                            "Številka stika ${m.name} (${m.number}) ni videti veljavna mobilna številka — sporočila ne morem pripraviti."
-                        } else {
-                            val opened = runCatching {
-                                service.startActivity(
-                                    android.content.Intent(
-                                        android.content.Intent.ACTION_VIEW,
-                                        android.net.Uri.parse("https://wa.me/$intl?text=" + android.net.Uri.encode(text))
-                                    ).setPackage("com.whatsapp").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                )
-                            }.isSuccess
-                            if (opened) {
-                                AuditLog.append(service, "dejanje", "osnutek WhatsApp -> ${m.name}: $text", "GREEN", "odprt sestavljalnik — pošlje uporabnik sam")
-                                "Na zaslonu je odprt WhatsApp pogovor z ${m.name} s pripravljenim besedilom. Sporočilo NI poslano — uporabnik mora sam pritisniti Pošlji; to mu jasno povej."
-                            } else {
-                                AuditLog.append(service, "dejanje", "osnutek WhatsApp -> ${m.name}", "GREEN", "WhatsAppa ni bilo mogoče odpreti")
-                                "WhatsAppa ni mogoče odpreti."
-                            }
-                        }
-                    }
-                }
+                val via = args.optString("via")
+                if (text.isBlank()) "Manjka besedilo sporočila."
+                else openOrCompose(name, via, text)
             }
 
             "end_conversation" -> {
@@ -446,7 +477,7 @@ class LiveSession(
         }
 
         Log.i("Sopotnik", "orodje $name($args) -> $out")
-        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message")
+        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message", "open_conversation")
         if (name !in selfAudited) {
             AuditLog.append(service, "dejanje", "$name ${args} (live)", "GREEN", out)
         }

@@ -115,6 +115,12 @@
             android:text="Dostop do obvestil (nadzor glasbe)" />
 
         <Button
+            android:id="@+id/btn_overlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Prikaz nad drugimi aplikacijami (odpiranje zaslonov iz ozadja)" />
+
+        <Button
             android:id="@+id/btn_diag"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

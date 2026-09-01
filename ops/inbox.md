@@ -192,6 +192,17 @@ Tvoje poročilo »7/15, sort + threshold« je nastalo pred izgradnjo 0.3.10 — 
 4. ZADNJI stavek: »OPS T10c KONČANO: APK <verzija>; izpis commitan« (ali BLOKIRANO + razlog).
 PASS/FAIL presoja NI tvoja naloga — oceni jo oblačna seja iz surovega izpisa.
 
+## T11 — gateway v0.3.11 + dimni test SMS/WhatsApp osnutkov na testnem telefonu
+1. `launchctl kickstart -k gui/$UID/si.sopotnik.gateway`; `tail -2 backend/gateway.log` → mora pisati v0.3.11.
+2. Počakaj na APK 0.3.11-faza2 v builds/ (git pull na ~30 s) in ga namesti na testni telefon.
+3. Dimni testi (surove izpise shrani v `ops/results/t11.md` in commitaj po izjemi):
+   a) `adb -s <testni> shell am start -a android.intent.action.SENDTO -d "smsto:%2B38640111222" --es sms_body "Testni osnutek"`
+      nato `adb -s <testni> shell "dumpsys activity activities | grep -m2 -iE 'topResumedActivity|mResumedActivity'"`
+      → mora biti SMS aplikacija (messaging); screencap za dokaz, da je besedilo v polju.
+   b) `adb -s <testni> shell am force-stop si.sopotnik`; zaženi Sopotnik; prek DEBUG ni mogoče klicati orodij —
+      zato samo preveri, da se aplikacija zažene brez sesutja po novem buildu (logcat -s Sopotnik:* -d | tail -20).
+4. ZADNJI stavek: »OPS T11 KONČANO: gateway v<verzija>; APK <verzija>; smsto <ok/ne>« (ali BLOKIRANO + razlog).
+
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
 `while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`

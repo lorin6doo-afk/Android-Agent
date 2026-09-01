@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -72,6 +73,11 @@ class SettingsActivity : Activity() {
 
         findViewById<Button>(R.id.btn_notif_access).setOnClickListener {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+
+        findViewById<Button>(R.id.btn_overlay).setOnClickListener {
+            // brez tega Android blokira odpiranje pogovorov/aplikacij, kadar je spredaj druga aplikacija
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
 
         findViewById<Button>(R.id.btn_diag).setOnClickListener {
