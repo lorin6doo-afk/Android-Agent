@@ -137,6 +137,10 @@ Testni telefon ima zdaj nameščen Tailscale (uporabnik ga je prijavil), zato la
 (Restart za trenutek prekine morebitno živo sejo — aplikacija se sama znova poveže.)
 ZADNJI stavek: »OPS T8 KONČANO: gateway v<verzija>«.
 
+## T9 — posodobitev gatewaya na v0.3.8 (varnostna zapora prejemnika + compose_message)
+`launchctl kickstart -k gui/$UID/si.sopotnik.gateway`, počakaj 2 s in `tail -2 backend/gateway.log`
+— pričakovano »Sopotnik gateway v0.3.8 posluša …«. ZADNJI stavek: »OPS T9 KONČANO: gateway v<verzija>«.
+
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
 `while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`

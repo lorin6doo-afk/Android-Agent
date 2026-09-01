@@ -189,6 +189,15 @@ class LiveSession(
         }
     }
 
+    /** Ime, ki ga trdi model, se mora ujemati z dejanskim naslovom obvestila. */
+    private fun recipientMatches(claimed: String, entry: NotifEntry): Boolean {
+        val c = IntentRouter.normalize(claimed).trim()
+        val t = IntentRouter.normalize(entry.title).trim()
+        if (c.isEmpty() || t.isEmpty()) return false
+        return t.contains(c) || c.contains(t) ||
+            t.split(' ').any { w -> w.isNotEmpty() && c.split(' ').any { it == w } }
+    }
+
     private fun result(callId: String, output: String) {
         agent.sendJson(JSONObject().put("t", "rt_action_result").put("callId", callId).put("output", output))
     }
@@ -304,19 +313,51 @@ class LiveSession(
             "send_reply" -> {
                 val idx = args.optInt("number") - 1
                 val text = args.optString("text")
+                val claimed = args.optString("recipient")
                 val fresh = System.currentTimeMillis() - lastNotifsAt < 5 * 60_000
                 val entry = lastNotifs.getOrNull(idx)
                 when {
                     text.isBlank() -> "Manjka besedilo odgovora."
                     entry == null || !fresh -> "Najprej znova preberi obvestila z read_notifications."
+                    claimed.isBlank() -> "Manjka prejemnik (recipient) — navedi ime NATANKO tako, kot je v zadnjem seznamu obvestil."
+                    !recipientMatches(claimed, entry) -> {
+                        AuditLog.append(service, "dejanje", "odgovor -> ${entry.app}/${entry.title} (zahtevan: $claimed)", "RED", "USTAVLJENO: neujemanje prejemnika")
+                        "USTAVLJENO: obvestilo številka ${idx + 1} pripada »${entry.title}« (${entry.app}), NE »$claimed«. Odgovor NI bil poslan. Znova preberi obvestila; če osebe ni v seznamu, ji s send_reply ni mogoče pisati — uporabi compose_message."
+                    }
                     !entry.canReply -> "Na to obvestilo ni mogoče odgovoriti."
                     NotifListener.reply(entry.key, text) -> {
                         AuditLog.append(service, "dejanje", "odgovor -> ${entry.app}/${entry.title}: $text", "YELLOW", "ustno potrjeno, poslano (live)")
-                        "Odgovor poslan."
+                        "Odgovor poslan: »${entry.title}« (${entry.app})."
                     }
                     else -> {
                         AuditLog.append(service, "dejanje", "odgovor -> ${entry.app}/${entry.title}", "YELLOW", "pošiljanje ni uspelo")
                         "Pošiljanje ni uspelo — obvestilo je morda izginilo."
+                    }
+                }
+            }
+
+            "compose_message" -> {
+                val name = args.optString("contact")
+                val text = args.optString("text")
+                val m = Actions.resolveContact(service, name)
+                when {
+                    text.isBlank() -> "Manjka besedilo sporočila."
+                    m == null -> "Stika '$name' ni v imeniku."
+                    else -> {
+                        val digits = m.number.filter { it.isDigit() || it == '+' }
+                        val intl = (if (digits.startsWith("0")) "+386" + digits.drop(1) else digits).removePrefix("+")
+                        val opened = runCatching {
+                            service.startActivity(
+                                android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse("https://wa.me/$intl?text=" + android.net.Uri.encode(text))
+                                ).setPackage("com.whatsapp").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }.isSuccess
+                        if (opened) {
+                            AuditLog.append(service, "dejanje", "osnutek WhatsApp -> ${m.name}: $text", "GREEN", "odprt sestavljalnik — pošlje uporabnik sam")
+                            "Na zaslonu je odprt WhatsApp pogovor z ${m.name} s pripravljenim besedilom. Sporočilo NI poslano — uporabnik mora sam pritisniti Pošlji; to mu jasno povej."
+                        } else "WhatsAppa ni mogoče odpreti."
                     }
                 }
             }
