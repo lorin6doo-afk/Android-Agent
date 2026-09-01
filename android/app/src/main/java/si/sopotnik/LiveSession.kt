@@ -290,6 +290,17 @@ class LiveSession(
 
             "open_app" -> Actions.execute(service, Action.OpenApp(args.optString("name")))
 
+            "open_notification" -> {
+                val idx = args.optInt("number") - 1
+                val fresh = System.currentTimeMillis() - lastNotifsAt < 5 * 60_000
+                val entry = lastNotifs.getOrNull(idx)
+                when {
+                    entry == null || !fresh -> "Najprej znova preberi obvestila z read_notifications."
+                    NotifListener.open(entry.key) -> "Odprto na zaslonu telefona: ${entry.app} — ${entry.title}."
+                    else -> "Tega obvestila ni mogoče odpreti — morda je medtem izginilo."
+                }
+            }
+
             "send_reply" -> {
                 val idx = args.optInt("number") - 1
                 val text = args.optString("text")

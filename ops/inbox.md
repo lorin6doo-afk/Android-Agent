@@ -131,6 +131,12 @@ Testni telefon ima zdaj nameščen Tailscale (uporabnik ga je prijavil), zato la
    pripravljeni seji ali poslušanju brez napak povezave. Nato `adb -s <testni> shell am force-stop si.sopotnik`.
 5. ZADNJI stavek: »OPS T7 KONČANO: ping <ok/ne>; test povezave <ok/ne>; seja <ok/ne>« (+ razlog ob neuspehu).
 
+## T8 — posodobitev gatewaya na v0.3.7 (novo orodje open_notification)
+`launchctl kickstart -k gui/$UID/si.sopotnik.gateway`, počakaj 2 s in preveri
+`tail -2 backend/gateway.log` — pričakovano »Sopotnik gateway v0.3.7 posluša …«.
+(Restart za trenutek prekine morebitno živo sejo — aplikacija se sama znova poveže.)
+ZADNJI stavek: »OPS T8 KONČANO: gateway v<verzija>«.
+
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
 `while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`

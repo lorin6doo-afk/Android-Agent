@@ -1,5 +1,6 @@
 package si.sopotnik
 
+import android.app.ActivityOptions
 import android.app.Notification
 import android.app.RemoteInput
 import android.content.ComponentName
@@ -153,6 +154,23 @@ class NotifListener : NotificationListenerService() {
                         )
                     }
             }.getOrNull()
+        }
+
+        /** Odpre obvestilo na zaslonu — enako kot dotik obvestila (npr. pogovor v WhatsAppu). */
+        fun open(key: String): Boolean {
+            val svc = instance ?: return false
+            return runCatching {
+                val sbn = svc.activeNotifications.firstOrNull { it.key == key } ?: return false
+                val pi = sbn.notification.contentIntent ?: return false
+                val opts = ActivityOptions.makeBasic()
+                if (android.os.Build.VERSION.SDK_INT >= 34) {
+                    opts.setPendingIntentBackgroundActivityStartMode(
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    )
+                }
+                pi.send(svc, 0, null, null, null, null, opts.toBundle())
+                true
+            }.getOrDefault(false)
         }
 
         fun reply(key: String, text: String): Boolean {
