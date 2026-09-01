@@ -25,7 +25,7 @@ if (existsSync(envFile)) {
 
 // dvigni ob vsaki vsebinski spremembi backenda — izpiše se ob zagonu, da je
 // na Macu na pogled jasno, katera koda teče (tail backend/gateway.log)
-const GW_VERSION = "0.3.8";
+const GW_VERSION = "0.3.9";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TOKEN = process.env.SOPOTNIK_TOKEN ?? "";

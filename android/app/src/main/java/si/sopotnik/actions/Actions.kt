@@ -20,11 +20,45 @@ import si.sopotnik.NotifListener
 /** Izvajanje dejanj na telefonu. Vrne kratek govorjeni "ack" ali opis napake. */
 object Actions {
 
-    fun resolveContact(ctx: Context, query: String): ContactMatch? {
-        val q = IntentRouter.normalize(query).trim()
-        if (q.isEmpty()) return null
-        var best: ContactMatch? = null
-        var bestScore = 0
+    data class ScoredContact(val match: ContactMatch, val score: Int)
+
+    /** Ključ za primerjavo imen: brez šumnikov (normalize) IN brez simbolov —
+     *  stik »Urša*« se tako primerja kot »ursa«. */
+    fun matchKey(s: String): String =
+        IntentRouter.normalize(s)
+            .map { if (it.isLetterOrDigit()) it else ' ' }
+            .joinToString("")
+            .split(' ')
+            .filter { it.isNotEmpty() }
+            .joinToString(" ")
+
+    /**
+     * Točkovanje po besedah: ujemanje ni pogojeno z VSEMI besedami poizvedbe —
+     * »Urša Zvezdica« (izgovorjen opis znaka *) mora najti stik »Urša*«.
+     * 100 popolno, 90 vse besede poizvedbe pokrite s predponami, sicer sorazmerno
+     * s številom pokritih besed (70 pri 1/2), +5 za ujemanje prve besede (ime).
+     */
+    private fun scoreName(nameKey: String, queryKey: String): Int {
+        if (nameKey.isEmpty() || queryKey.isEmpty()) return 0
+        if (nameKey == queryKey) return 100
+        val nTok = nameKey.split(' ')
+        val qTok = queryKey.split(' ')
+        val covered = qTok.count { q -> nTok.any { n -> n.startsWith(q) || q.startsWith(n) } }
+        var score = when {
+            covered == qTok.size -> 90
+            covered > 0 -> 50 + (40 * covered) / qTok.size
+            nameKey.contains(queryKey) -> 40
+            else -> return 0
+        }
+        if (nTok.first().startsWith(qTok.first()) || qTok.first().startsWith(nTok.first())) score += 5
+        return score.coerceAtMost(99)
+    }
+
+    /** Vrne do [limit] najboljših kandidatov, razvrščenih po točkah (prag 55). */
+    fun resolveContacts(ctx: Context, query: String, limit: Int = 3): List<ScoredContact> {
+        val q = matchKey(query)
+        if (q.isEmpty()) return emptyList()
+        val found = LinkedHashMap<String, ScoredContact>() // en vnos na ime stika
         runCatching {
             ctx.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
@@ -37,24 +71,19 @@ object Actions {
                 while (cur.moveToNext()) {
                     val name = cur.getString(0) ?: continue
                     val number = cur.getString(1) ?: continue
-                    val nn = IntentRouter.normalize(name)
-                    val score = when {
-                        nn == q -> 100
-                        nn.startsWith("$q ") || nn.startsWith(q) -> 80
-                        nn.split(' ').any { it.startsWith(q) } -> 70
-                        q.split(' ').all { t -> nn.split(' ').any { it.startsWith(t) } } -> 65
-                        nn.contains(q) -> 40
-                        else -> 0
-                    }
-                    if (score > bestScore) {
-                        bestScore = score
-                        best = ContactMatch(name, number)
+                    val score = scoreName(matchKey(name), q)
+                    if (score >= 55) {
+                        val prev = found[name]
+                        if (prev == null || score > prev.score) found[name] = ScoredContact(ContactMatch(name, number), score)
                     }
                 }
             }
         }
-        return best
+        return found.values.sortedByDescending { it.score }.take(limit)
     }
+
+    fun resolveContact(ctx: Context, query: String): ContactMatch? =
+        resolveContacts(ctx, query, limit = 1).firstOrNull()?.match
 
     fun execute(ctx: Context, action: Action, resolved: ContactMatch? = null): String = try {
         when (action) {

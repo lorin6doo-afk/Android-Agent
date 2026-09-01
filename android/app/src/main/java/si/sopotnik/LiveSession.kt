@@ -244,10 +244,16 @@ class LiveSession(
 
             "find_contact" -> {
                 val q = args.optString("query")
-                val m = Actions.resolveContact(service, q)
-                lastFound = m
-                if (m == null) "Stika '$q' ni v imeniku."
-                else "Najden stik: ${m.name}. Ustno vprašaj uporabnika za potrditev, nato uporabi call_contact."
+                val cands = Actions.resolveContacts(service, q)
+                lastFound = cands.firstOrNull()?.match
+                when {
+                    cands.isEmpty() ->
+                        "Stika '$q' ni v imeniku. Poskusi znova SAMO z osnovnim imenom (brez priimka, opisov ali izgovorjenih simbolov)."
+                    cands.size == 1 || cands[0].score >= cands[1].score + 15 ->
+                        "Najden stik: ${cands[0].match.name}. Ustno vprašaj uporabnika za potrditev, nato uporabi call_contact."
+                    else ->
+                        "Več podobnih stikov: ${cands.joinToString("; ") { it.match.name }}. Trenutno je izbran ${cands[0].match.name} — ustno vprašaj uporabnika, katerega misli; če drugega, znova pokliči find_contact z natančnim imenom."
+                }
             }
 
             "call_contact" -> {
