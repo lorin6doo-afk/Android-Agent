@@ -170,6 +170,16 @@ in preveri z `dumpsys package si.sopotnik | grep -m1 versionName`). Nato:
 5. Poročilo: tabela PASS/FAIL + surove DEBUG_FIND vrstice.
    ZADNJI stavek natanko: »OPS T10 KONČANO: <N>/15 PASS« oziroma »OPS T10 BLOKIRANO: <razlog>«.
 
+## T10b — PONOVI baterijo NA APK 0.3.10 (rezultati T10 so bili iz stare 0.3.9!)
+Tvoje poročilo »7/15, sort + threshold« je nastalo pred izgradnjo 0.3.10 — testiral si staro kodo.
+1. NAJPREJ preveri verzijo: `adb -s <testni> shell dumpsys package si.sopotnik | grep -m1 versionName`
+   — če NI »0.3.10-faza2«: `git pull --ff-only` in `adb -s <testni> install -r builds/sopotnik-debug.apk`,
+   nato verzijo preveri ZNOVA in jo OBVEZNO navedi v poročilu.
+2. Preveri, da testni stiki iz T10 obstajajo (poženi DEBUG_FIND "Rudi" — če vrne NI ZADETKA,
+   stike ustvari po postopku iz T10, točka 1).
+3. Izvedi VSEH 15 poizvedb iz T10 (točka 3) in oceni PASS/FAIL po tam navedenih pričakovanjih.
+4. ZADNJI stavek natanko: »OPS T10b KONČANO: APK <verzija>; <N>/15 PASS« (ob neuspehu BLOKIRANO + razlog).
+
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
 `while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`
