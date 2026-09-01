@@ -43,6 +43,7 @@ class LiveSession(
     private var recordThread: Thread? = null
     private var track: AudioTrack? = null
     private var lastFound: ContactMatch? = null
+    private var lastFoundAt = 0L
     private var lastNotifs: List<NotifEntry> = emptyList()
     private var lastNotifsAt = 0L
     private var currentRate = 24_000
@@ -189,14 +190,31 @@ class LiveSession(
         }
     }
 
-    /** Ime, ki ga trdi model, se mora ujemati z dejanskim naslovom obvestila. */
-    private fun recipientMatches(claimed: String, entry: NotifEntry): Boolean {
-        val c = IntentRouter.normalize(claimed).trim()
-        val t = IntentRouter.normalize(entry.title).trim()
-        if (c.isEmpty() || t.isEmpty()) return false
-        return t.contains(c) || c.contains(t) ||
-            t.split(' ').any { w -> w.isNotEmpty() && c.split(' ').any { it == w } }
+    /**
+     * Ime, ki ga trdi model, se mora ujemati z dejanskim imenom (naslov obvestila
+     * oz. stik). Primerjava prek matchKey (brez šumnikov in simbolov — »Urša*« ==
+     * »Urša«), ujemanje pa zahteva, da so VSE besede ene strani prisotne kot cele
+     * besede druge — ena skupna beseda (skupen priimek) ali podniz sredi besede
+     * (»Ana« ⊂ »Milana«) NI dovolj.
+     */
+    private fun namesMatch(claimed: String, actual: String): Boolean {
+        val c = Actions.matchKey(claimed)
+        val a = Actions.matchKey(actual)
+        if (c.isEmpty() || a.isEmpty()) {
+            val cn = IntentRouter.normalize(claimed).trim()
+            val an = IntentRouter.normalize(actual).trim()
+            return cn.isNotEmpty() && cn == an
+        }
+        if (c == a) return true
+        val cTok = c.split(' ')
+        val aTok = a.split(' ')
+        val aSet = aTok.toSet()
+        val cSet = cTok.toSet()
+        return cTok.all { it in aSet } || aTok.all { it in cSet }
     }
+
+    private fun recipientMatches(claimed: String, entry: NotifEntry): Boolean =
+        namesMatch(claimed, entry.title)
 
     private fun result(callId: String, output: String) {
         agent.sendJson(JSONObject().put("t", "rt_action_result").put("callId", callId).put("output", output))
@@ -244,26 +262,56 @@ class LiveSession(
 
             "find_contact" -> {
                 val q = args.optString("query")
-                val cands = Actions.resolveContacts(service, q)
-                lastFound = cands.firstOrNull()?.match
+                val cands = try {
+                    Actions.resolveContacts(service, q)
+                } catch (e: SecurityException) {
+                    null
+                }
                 when {
-                    cands.isEmpty() ->
+                    cands == null -> {
+                        lastFound = null
+                        "Dovoljenje za branje stikov ni podeljeno — povej uporabniku, naj ga dodeli v nastavitvah Sopotnika."
+                    }
+                    cands.isEmpty() -> {
+                        lastFound = null
                         "Stika '$q' ni v imeniku. Poskusi znova SAMO z osnovnim imenom (brez priimka, opisov ali izgovorjenih simbolov)."
-                    cands.size == 1 || cands[0].score >= cands[1].score + 15 ->
-                        "Najden stik: ${cands[0].match.name}. Ustno vprašaj uporabnika za potrditev, nato uporabi call_contact."
-                    else ->
-                        "Več podobnih stikov: ${cands.joinToString("; ") { it.match.name }}. Trenutno je izbran ${cands[0].match.name} — ustno vprašaj uporabnika, katerega misli; če drugega, znova pokliči find_contact z natančnim imenom."
+                    }
+                    cands[0].score == 100 ||
+                        (cands.size == 1 && cands[0].score >= 80) ||
+                        (cands.size > 1 && cands[0].score >= 80 && cands[0].score >= cands[1].score + 15) -> {
+                        lastFound = cands[0].match
+                        lastFoundAt = System.currentTimeMillis()
+                        "Najden stik: ${cands[0].match.name}. Ustno vprašaj uporabnika za potrditev; za klic uporabi call_contact, za novo sporočilo compose_message."
+                    }
+                    cands.size == 1 -> {
+                        lastFound = cands[0].match
+                        lastFoundAt = System.currentTimeMillis()
+                        "Najbolj podoben stik: ${cands[0].match.name} (ujemanje ni popolno). OBVEZNO ustno preveri, ali je to prava oseba, preden narediš karkoli."
+                    }
+                    else -> {
+                        lastFound = null
+                        "Več podobnih stikov: ${cands.joinToString("; ") { it.match.name }}. Ustno vprašaj uporabnika, katerega misli, in znova pokliči find_contact z izbranim natančnim imenom."
+                    }
                 }
             }
 
             "call_contact" -> {
                 val c = lastFound
-                if (c == null) "Najprej uporabi find_contact."
-                else {
-                    lastFound = null
-                    val say = Actions.execute(service, Action.Call(c.name), resolved = c)
-                    AuditLog.append(service, "dejanje", "klic -> ${c.name} (live)", "YELLOW", "ustno potrjeno, izvedeno")
-                    say
+                val claimed = args.optString("name")
+                val fresh = System.currentTimeMillis() - lastFoundAt < 2 * 60_000
+                when {
+                    c == null || !fresh -> "Najprej uporabi find_contact (izbire ni ali je potekla)."
+                    claimed.isBlank() -> "Navedi ime stika (name), da ga lahko preverim."
+                    !namesMatch(claimed, c.name) -> {
+                        AuditLog.append(service, "dejanje", "klic -> ${c.name} (zahtevan: $claimed)", "RED", "USTAVLJENO: neujemanje imena")
+                        "USTAVLJENO: izbran stik je »${c.name}«, ne »$claimed«. Klica NISEM izvedel — znova pokliči find_contact."
+                    }
+                    else -> {
+                        lastFound = null
+                        val say = Actions.execute(service, Action.Call(c.name), resolved = c)
+                        AuditLog.append(service, "dejanje", "klic -> ${c.name} (live)", "YELLOW", "ustno potrjeno, izvedeno")
+                        say
+                    }
                 }
             }
 
@@ -345,25 +393,46 @@ class LiveSession(
             "compose_message" -> {
                 val name = args.optString("contact")
                 val text = args.optString("text")
-                val m = Actions.resolveContact(service, name)
+                val cands = try {
+                    Actions.resolveContacts(service, name)
+                } catch (e: SecurityException) {
+                    null
+                }
+                val top = cands?.firstOrNull()
                 when {
                     text.isBlank() -> "Manjka besedilo sporočila."
-                    m == null -> "Stika '$name' ni v imeniku."
+                    cands == null -> "Dovoljenje za branje stikov ni podeljeno — povej uporabniku, naj ga dodeli v nastavitvah Sopotnika."
+                    top == null -> "Stika '$name' ni v imeniku. Poskusi znova SAMO z osnovnim imenom."
+                    top.score < 80 || (cands.size > 1 && top.score < cands[1].score + 15 && top.score < 100) ->
+                        "Nisem prepričan, koga misliš: ${cands.joinToString("; ") { it.match.name }}. Ustno preveri in znova pokliči compose_message z natančnim imenom."
                     else -> {
-                        val digits = m.number.filter { it.isDigit() || it == '+' }
-                        val intl = (if (digits.startsWith("0")) "+386" + digits.drop(1) else digits).removePrefix("+")
-                        val opened = runCatching {
-                            service.startActivity(
-                                android.content.Intent(
-                                    android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse("https://wa.me/$intl?text=" + android.net.Uri.encode(text))
-                                ).setPackage("com.whatsapp").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
-                        }.isSuccess
-                        if (opened) {
-                            AuditLog.append(service, "dejanje", "osnutek WhatsApp -> ${m.name}: $text", "GREEN", "odprt sestavljalnik — pošlje uporabnik sam")
-                            "Na zaslonu je odprt WhatsApp pogovor z ${m.name} s pripravljenim besedilom. Sporočilo NI poslano — uporabnik mora sam pritisniti Pošlji; to mu jasno povej."
-                        } else "WhatsAppa ni mogoče odpreti."
+                        val m = top.match
+                        val digits = m.number.filter { it.isDigit() }
+                        val intl = when {
+                            m.number.trimStart().startsWith("+") -> digits
+                            digits.startsWith("00") -> digits.drop(2)
+                            digits.startsWith("0") -> "386" + digits.drop(1)
+                            else -> digits
+                        }
+                        if (intl.length < 8) {
+                            "Številka stika ${m.name} (${m.number}) ni videti veljavna mobilna številka — sporočila ne morem pripraviti."
+                        } else {
+                            val opened = runCatching {
+                                service.startActivity(
+                                    android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse("https://wa.me/$intl?text=" + android.net.Uri.encode(text))
+                                    ).setPackage("com.whatsapp").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }.isSuccess
+                            if (opened) {
+                                AuditLog.append(service, "dejanje", "osnutek WhatsApp -> ${m.name}: $text", "GREEN", "odprt sestavljalnik — pošlje uporabnik sam")
+                                "Na zaslonu je odprt WhatsApp pogovor z ${m.name} s pripravljenim besedilom. Sporočilo NI poslano — uporabnik mora sam pritisniti Pošlji; to mu jasno povej."
+                            } else {
+                                AuditLog.append(service, "dejanje", "osnutek WhatsApp -> ${m.name}", "GREEN", "WhatsAppa ni bilo mogoče odpreti")
+                                "WhatsAppa ni mogoče odpreti."
+                            }
+                        }
                     }
                 }
             }
@@ -377,7 +446,7 @@ class LiveSession(
         }
 
         Log.i("Sopotnik", "orodje $name($args) -> $out")
-        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply")
+        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message")
         if (name !in selfAudited) {
             AuditLog.append(service, "dejanje", "$name ${args} (live)", "GREEN", out)
         }

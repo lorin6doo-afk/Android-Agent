@@ -141,6 +141,33 @@ ZADNJI stavek: »OPS T8 KONČANO: gateway v<verzija>«.
 `launchctl kickstart -k gui/$UID/si.sopotnik.gateway`, počakaj 2 s in `tail -2 backend/gateway.log`
 — pričakovano »Sopotnik gateway v0.3.8 posluša …«. ZADNJI stavek: »OPS T9 KONČANO: gateway v<verzija>«.
 
+## T10 — baterija testov iskanja stikov na TESTNEM telefonu (v0.3.10)
+Predpogoj: počakaj, da je v builds/ APK z versionName 0.3.10-faza2 (git pull vsakih 30 s;
+T6 ga bo namestil — sicer ga namesti sam z `adb -s <testni> install -r builds/sopotnik-debug.apk`
+in preveri z `dumpsys package si.sopotnik | grep -m1 versionName`). Nato:
+0. `launchctl kickstart -k gui/$UID/si.sopotnik.gateway` in preveri »gateway v0.3.9« v logu.
+1. Na testnem telefonu USTVARI te stike (adb INSERT + screencap + input tap na Shrani;
+   po vsakem preveri s screencap):
+   `adb -s <testni> shell am start -a android.intent.action.INSERT -t vnd.android.cursor.dir/contact -e name "<IME>" -e phone "<ŠT>"`
+   · »Urša*« +38640111222 · »Bojan Urša« +38640111333 · »Rudi Švikart« +38640111444
+   · »Mama ❤« +38640111555 · »dr. Novak Jože« +38640111666 · »Miha K.« +38640111777
+   · »Novakovič Peter« +38640111888
+2. Preveri dovoljenje: `adb -s <testni> shell pm grant si.sopotnik android.permission.READ_CONTACTS`
+3. `adb -s <testni> logcat -c`, nato za VSAKO poizvedbo:
+   `adb -s <testni> shell am broadcast -a si.sopotnik.DEBUG_DUMP --es q "<POIZVEDBA>" si.sopotnik`
+   Poizvedbe in PRIČAKOVANI PRVI zadetek:
+   · "Urša Zvezdica" → Urša*      · "Urša" → Urša*          · "ursa" → Urša*
+   · "Svikart" → Rudi Švikart     · "Rudi" → Rudi Švikart   · "Bojan" → Bojan Urša
+   · "Novak Jože" → dr. Novak Jože · "Jože Novak" → dr. Novak Jože · "Novakovo" → dr. Novak Jože
+   · "Novak" → dr. Novak Jože (PRED Novakovič Peter; Miha K. NE sme biti med zadetki)
+   · "Mama" → Mama ❤              · "mama srce" → Mama ❤
+   · "Janez" → NI ZADETKA (Miha K. ne sme zadeti) · "Katarina Kobilca" → NI ZADETKA
+   · "Ur" → več kandidatov (Urša* in Bojan Urša)
+4. `adb -s <testni> logcat -v time -s Sopotnik:* -d | grep DEBUG_FIND` → primerjaj z zgornjimi
+   pričakovanji in za vsako vrstico zapiši PASS/FAIL.
+5. Poročilo: tabela PASS/FAIL + surove DEBUG_FIND vrstice.
+   ZADNJI stavek natanko: »OPS T10 KONČANO: <N>/15 PASS« oziroma »OPS T10 BLOKIRANO: <razlog>«.
+
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
 `while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`

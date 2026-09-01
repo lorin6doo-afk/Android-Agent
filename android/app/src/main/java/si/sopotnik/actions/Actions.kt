@@ -33,57 +33,76 @@ object Actions {
             .joinToString(" ")
 
     /**
-     * Točkovanje po besedah: ujemanje ni pogojeno z VSEMI besedami poizvedbe —
-     * »Urša Zvezdica« (izgovorjen opis znaka *) mora najti stik »Urša*«.
-     * 100 popolno, 90 vse besede poizvedbe pokrite s predponami, sicer sorazmerno
-     * s številom pokritih besed (70 pri 1/2), +5 za ujemanje prve besede (ime).
+     * Točkovanje po besedah — utežena pokritost besed poizvedbe:
+     * točna beseda 1.0, predpona imena 0.85 (poizvedba ≥ 2 znaka), obrnjena
+     * predpona 0.75 (beseda imena ≥ 3 znake — inicialke ne štejejo; podpira
+     * sklone: »Novakovo« → »Novak«). »Urša Zvezdica« (izgovorjen opis znaka *)
+     * tako najde »Urša*«: neujemajoča beseda ocene ne izniči, saj vsaj eno
+     * močno ujemanje (≥ 0.85) zagotovi spodnjo mejo 65. Popolna enakost 100,
+     * +5 za točno enakost prvih besed; brez ujemanja 0.
      */
     private fun scoreName(nameKey: String, queryKey: String): Int {
         if (nameKey.isEmpty() || queryKey.isEmpty()) return 0
         if (nameKey == queryKey) return 100
         val nTok = nameKey.split(' ')
         val qTok = queryKey.split(' ')
-        val covered = qTok.count { q -> nTok.any { n -> n.startsWith(q) || q.startsWith(n) } }
-        var score = when {
-            covered == qTok.size -> 90
-            covered > 0 -> 50 + (40 * covered) / qTok.size
-            nameKey.contains(queryKey) -> 40
-            else -> return 0
+        var sum = 0.0
+        var strongest = 0.0
+        for (q in qTok) {
+            var best = 0.0
+            for (n in nTok) {
+                val w = when {
+                    n == q -> 1.0
+                    q.length >= 2 && n.startsWith(q) -> 0.85
+                    n.length >= 3 && q.startsWith(n) -> 0.75
+                    else -> 0.0
+                }
+                if (w > best) best = w
+            }
+            sum += best
+            if (best > strongest) strongest = best
         }
-        if (nTok.first().startsWith(qTok.first()) || qTok.first().startsWith(nTok.first())) score += 5
-        return score.coerceAtMost(99)
+        if (sum == 0.0) return 0
+        var score = Math.round(90.0 * sum / qTok.size).toInt()
+        if (strongest >= 0.85 && score < 65) score = 65
+        if (nTok.first() == qTok.first()) score += 5
+        return score.coerceIn(0, 99)
     }
 
-    /** Vrne do [limit] najboljših kandidatov, razvrščenih po točkah (prag 55). */
+    /**
+     * Vrne do [limit] najboljših kandidatov (prag 60), determinirano razvrščenih
+     * (točke, krajše ime, abeceda). Ob manjkajočem dovoljenju READ_CONTACTS
+     * vrže SecurityException — klicatelj mora to sporočiti, ne »ni v imeniku«.
+     */
     fun resolveContacts(ctx: Context, query: String, limit: Int = 3): List<ScoredContact> {
         val q = matchKey(query)
         if (q.isEmpty()) return emptyList()
         val found = LinkedHashMap<String, ScoredContact>() // en vnos na ime stika
-        runCatching {
-            ctx.contentResolver.query(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                arrayOf(
-                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                    ContactsContract.CommonDataKinds.Phone.NUMBER
-                ),
-                null, null, null
-            )?.use { cur ->
-                while (cur.moveToNext()) {
-                    val name = cur.getString(0) ?: continue
-                    val number = cur.getString(1) ?: continue
-                    val score = scoreName(matchKey(name), q)
-                    if (score >= 55) {
-                        val prev = found[name]
-                        if (prev == null || score > prev.score) found[name] = ScoredContact(ContactMatch(name, number), score)
-                    }
-                }
+        ctx.contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            ),
+            null, null,
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
+        )?.use { cur ->
+            while (cur.moveToNext()) {
+                val name = cur.getString(0) ?: continue
+                val number = cur.getString(1) ?: continue
+                val score = scoreName(matchKey(name), q)
+                if (score >= 60 && found[name] == null) found[name] = ScoredContact(ContactMatch(name, number), score)
             }
         }
-        return found.values.sortedByDescending { it.score }.take(limit)
+        return found.values
+            .sortedWith(compareByDescending<ScoredContact> { it.score }.thenBy { it.match.name.length }.thenBy { it.match.name })
+            .take(limit)
     }
 
+    /** Samozavesten posamični zadetek (≥ 80) — za klasični klicni tok. */
     fun resolveContact(ctx: Context, query: String): ContactMatch? =
-        resolveContacts(ctx, query, limit = 1).firstOrNull()?.match
+        runCatching { resolveContacts(ctx, query, limit = 1) }.getOrDefault(emptyList())
+            .firstOrNull()?.takeIf { it.score >= 80 }?.match
 
     fun execute(ctx: Context, action: Action, resolved: ContactMatch? = null): String = try {
         when (action) {

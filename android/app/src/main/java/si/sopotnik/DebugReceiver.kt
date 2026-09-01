@@ -16,7 +16,13 @@ class DebugReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val q = intent.getStringExtra("q")
         if (q != null) {
-            val res = si.sopotnik.actions.Actions.resolveContacts(ctx, q)
+            if (ctx.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.i(NotifListener.TAG, "DEBUG_FIND '$q' -> NI DOVOLJENJA READ_CONTACTS")
+                return
+            }
+            val res = runCatching { si.sopotnik.actions.Actions.resolveContacts(ctx, q) }.getOrDefault(emptyList())
             Log.i(
                 NotifListener.TAG,
                 "DEBUG_FIND '$q' -> " +
