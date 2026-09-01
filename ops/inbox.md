@@ -141,7 +141,9 @@ ZADNJI stavek: »OPS T8 KONČANO: gateway v<verzija>«.
 `launchctl kickstart -k gui/$UID/si.sopotnik.gateway`, počakaj 2 s in `tail -2 backend/gateway.log`
 — pričakovano »Sopotnik gateway v0.3.8 posluša …«. ZADNJI stavek: »OPS T9 KONČANO: gateway v<verzija>«.
 
-## T10 — baterija testov iskanja stikov na TESTNEM telefonu (v0.3.10)
+## T10 — baterija testov iskanja stikov na TESTNEM telefonu (v0.3.10) — IZVEDI TAKOJ
+POZOR: APK 0.3.10 je CI že zgradil (commit »ci: build Sopotnik APK«, 15:36). Če si T10 začel
+prezgodaj (pred APK), ga izvedi ZDAJ v celoti in poročaj NATANKO v predpisanem formatu.
 Predpogoj: počakaj, da je v builds/ APK z versionName 0.3.10-faza2 (git pull vsakih 30 s;
 T6 ga bo namestil — sicer ga namesti sam z `adb -s <testni> install -r builds/sopotnik-debug.apk`
 in preveri z `dumpsys package si.sopotnik | grep -m1 versionName`). Nato:
