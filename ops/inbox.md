@@ -107,6 +107,30 @@ Uporabnik je pravkar: vstavil SIM, vklopil »Namestitev prek USB« in verjetno t
     obvestil <N/M>; inject <deluje/blokiran>; NAPRAVE: <…>; GATEWAY: v<…>«
     oziroma »OPS T5 BLOKIRANO: <točen razlog>«.
 
+## T6 — STALNA naloga: samodejni testni krog ob vsakem novem APK
+Velja trajno. Ob vsakem novem commitu »ci: build Sopotnik APK« (stražar ga zazna):
+1. `adb -s <testni> install -r builds/sopotnik-debug.apk`
+2. `adb -s <testni> shell am start -n si.sopotnik/.MainActivity`; počakaj 6 s
+3. `adb -s <testni> shell am broadcast -a si.sopotnik.DEBUG_DUMP si.sopotnik`; počakaj 2 s
+4. `adb -s <testni> logcat -v time -s Sopotnik:* -d | tail -30`
+5. Kratko poročilo; ZADNJI stavek: »OPS T6 KONČANO: APK <verzija>; listener <da/ne>; obvestil <N/M>«.
+Stražarja po VSAKI obdelavi znova zaženi SAM, brez spraševanja — to je stalno pravilo in ne potrebuje potrditve.
+
+## T7 — konfiguracija Sopotnika na testnem telefonu (konec-do-konca)
+Testni telefon ima zdaj nameščen Tailscale (uporabnik ga je prijavil), zato lahko doseže gateway.
+1. Dovoljenja aplikaciji: `adb -s <testni> shell pm grant si.sopotnik android.permission.RECORD_AUDIO`
+   in enako za `android.permission.POST_NOTIFICATIONS`, `android.permission.READ_CONTACTS`, `android.permission.CALL_PHONE`.
+2. Povezljivost: `adb -s <testni> shell ping -c 2 100.118.155.97` — poročaj izid.
+3. Nastavi backend v aplikaciji: `adb -s <testni> shell am start -n si.sopotnik/.SettingsActivity`,
+   s screencap + `input tap` izberi polje naslova in z `input text` vnesi `ws://100.118.155.97:8787`;
+   v polje žetona vnesi vrednost SOPOTNIK_TOKEN iz `backend/.env` (preberi jo lokalno —
+   ŽETONA NIKOLI ne izpisuj v pogovor ali poročilo!). Tapni »Preizkusi povezavo« in s
+   screencap preveri izid; nastavitve se shranijo ob izhodu (keyevent 4).
+4. Dimni test: `adb -s <testni> shell am start -n si.sopotnik/.MainActivity --ez autostart true`;
+   počakaj 10 s; `adb -s <testni> logcat -d -s Sopotnik:* | tail -20` — uspeh je vrstica o
+   pripravljeni seji ali poslušanju brez napak povezave. Nato `adb -s <testni> shell am force-stop si.sopotnik`.
+5. ZADNJI stavek: »OPS T7 KONČANO: ping <ok/ne>; test povezave <ok/ne>; seja <ok/ne>« (+ razlog ob neuspehu).
+
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):
 `while :; do git fetch -q origin claude/android-ai-assistant-plan-88kykl; [ "$(git rev-parse origin/claude/android-ai-assistant-plan-88kykl)" != "$(git rev-parse HEAD)" ] && exit 0; sleep 60; done`
