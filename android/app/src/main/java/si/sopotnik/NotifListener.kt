@@ -88,14 +88,28 @@ class NotifListener : NotificationListenerService() {
                     sb.appendLine("Vezavo sem pravkar znova zahteval (requestRebind + obhod). Počakaj 3 sekunde in znova pritisni 🩺. Če ostane NE: izklopi in znova vklopi dostop do obvestil ali ponovno zaženi telefon.")
                 }
                 else -> {
-                    val all = runCatching { svc.activeNotifications.size }.getOrNull()
+                    val all = runCatching { svc.activeNotifications.toList() }.getOrNull()
                     if (all == null) sb.appendLine("branje activeNotifications NI uspelo — poslušalec je vezan le navidezno; izklopi in znova vklopi dostop.")
                     else {
                         val filtered = snapshot() ?: emptyList()
-                        sb.appendLine("aktivnih obvestil v sistemu: $all")
+                        sb.appendLine("aktivnih obvestil v sistemu: ${all.size}")
                         sb.appendLine("po filtru (brez trajnih in povzetkov skupin): ${filtered.size}")
                         filtered.take(4).forEachIndexed { i, n ->
                             sb.appendLine("${i + 1}) [${n.app}] ${n.title}${if (n.canReply) " ↩" else ""}")
+                        }
+                        // forenzika: surov seznam — pove, ali pogovorna obvestila (WhatsApp …)
+                        // do poslušalca sploh pridejo ali jih izloči filter
+                        sb.appendLine()
+                        sb.appendLine("Surovo (paket · profil · zastavice):")
+                        all.sortedByDescending { it.postTime }.take(25).forEach { sbn ->
+                            val n = sbn.notification
+                            val flags = mutableListOf<String>()
+                            if (sbn.isOngoing) flags.add("trajno")
+                            if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) flags.add("povzetek")
+                            if (n.extras.getCharSequence(Notification.EXTRA_TITLE) == null) flags.add("brez-naslova")
+                            if (replyAction(sbn) != null) flags.add("odgovor")
+                            val user = sbn.user.toString().filter { it.isDigit() }.ifEmpty { "?" }
+                            sb.appendLine("· ${sbn.packageName} u$user${if (flags.isEmpty()) "" else " [${flags.joinToString(",")}]"}")
                         }
                     }
                 }
@@ -103,7 +117,7 @@ class NotifListener : NotificationListenerService() {
             return sb.toString().trimEnd()
         }
 
-        fun snapshot(max: Int = 12): List<NotifEntry>? {
+        fun snapshot(max: Int = 15): List<NotifEntry>? {
             val svc = instance
             if (svc == null) {
                 Log.w(TAG, "snapshot(): instance == null (poslušalec ni vezan)")
@@ -118,7 +132,12 @@ class NotifListener : NotificationListenerService() {
                             n.flags and Notification.FLAG_GROUP_SUMMARY == 0 &&
                             n.extras.getCharSequence(Notification.EXTRA_TITLE) != null
                     }
-                    .sortedByDescending { it.postTime }
+                    // pogovori z možnostjo odgovora najprej — da jih kup vremenskih
+                    // napovedi in reklam nikoli ne izrine iz omejenega seznama
+                    .sortedWith(
+                        compareByDescending<StatusBarNotification> { replyAction(it) != null }
+                            .thenByDescending { it.postTime }
+                    )
                     .take(max)
                     .also { Log.i(TAG, "snapshot(): ${svc.activeNotifications.size} skupaj, ${it.size} po filtru") }
                     .map { sbn ->
