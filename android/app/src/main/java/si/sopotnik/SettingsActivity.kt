@@ -66,7 +66,8 @@ class SettingsActivity : Activity() {
                     Manifest.permission.RECORD_AUDIO,
                     Manifest.permission.POST_NOTIFICATIONS,
                     Manifest.permission.READ_CONTACTS,
-                    Manifest.permission.CALL_PHONE
+                    Manifest.permission.CALL_PHONE,
+                    Manifest.permission.SEND_SMS
                 ), 1
             )
         }

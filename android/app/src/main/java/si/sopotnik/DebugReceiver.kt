@@ -10,10 +10,17 @@ import android.util.Log
  * adb, zato izvožen sprejemnik ne razkriva ničesar:
  *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP si.sopotnik                    → stanje obvestil
  *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP --es q "Urša Zvezdica" si.sopotnik → test iskanja stikov
+ *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP --es sms_to "+386..." --es sms_text "Test" si.sopotnik → pošlje pravi SMS (izid DEBUG_SMS)
  *   adb logcat -s Sopotnik:* -d
  */
 class DebugReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
+        val smsTo = intent.getStringExtra("sms_to")
+        val smsText = intent.getStringExtra("sms_text")
+        if (smsTo != null && smsText != null) {
+            SmsSender.send(ctx, smsTo, smsText) { r -> Log.i(NotifListener.TAG, "DEBUG_SMS -> $r") }
+            return
+        }
         val q = intent.getStringExtra("q")
         if (q != null) {
             if (ctx.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) !=

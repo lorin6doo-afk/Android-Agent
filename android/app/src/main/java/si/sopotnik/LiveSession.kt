@@ -46,6 +46,9 @@ class LiveSession(
     private var lastFoundAt = 0L
     private var lastNotifs: List<NotifEntry> = emptyList()
     private var lastNotifsAt = 0L
+    /** SMS osnutek iz compose_message, ki čaka na uporabnikov »pošlji« (send_message). */
+    private data class Draft(val match: ContactMatch, val text: String, val at: Long)
+    private var pendingDraft: Draft? = null
     private var currentRate = 24_000
     private var reconnects = 0
 
@@ -225,17 +228,8 @@ class LiveSession(
     private fun openOrCompose(name: String, via: String, text: String?): String {
         if (via != "sms" && via != "whatsapp")
             return "Povej kanal: 'sms' ali 'whatsapp'. (»Aplikacija sporočila« pomeni sms.)"
-        val cands = try {
-            Actions.resolveContacts(service, name)
-        } catch (e: SecurityException) {
-            return "Dovoljenje za branje stikov ni podeljeno — povej uporabniku, naj ga dodeli v nastavitvah Sopotnika."
-        }
-        val top = cands.firstOrNull()
-            ?: return "Stika '$name' ni v imeniku. Poskusi znova SAMO z osnovnim imenom."
-        if (top.score < 80 || (cands.size > 1 && top.score < cands[1].score + 15 && top.score < 100))
-            return "Nisem prepričan, koga misliš: ${cands.joinToString("; ") { it.match.name }}. Ustno preveri in znova pokliči orodje z natančnim imenom."
-
-        val m = top.match
+        val (picked, err) = pickContact(name)
+        val m = picked ?: return err!!
         val intent: android.content.Intent
         val kje: String
         if (via == "sms") {
@@ -277,6 +271,79 @@ class LiveSession(
             "V $kje je odprt pogovor z ${m.name} s pripravljenim besedilom — sporočilo NI poslano, uporabnik pritisne Pošlji sam; to mu povej.$overlayWarn"
     }
 
+    /** Enolični stik iz imenika za sporočilo — ali razlog (besedilo za model), zakaj ga ni. */
+    private fun pickContact(name: String): Pair<ContactMatch?, String?> {
+        val cands = try {
+            Actions.resolveContacts(service, name)
+        } catch (e: SecurityException) {
+            return null to "Dovoljenje za branje stikov ni podeljeno — povej uporabniku, naj ga dodeli v nastavitvah Sopotnika."
+        }
+        val top = cands.firstOrNull()
+            ?: return null to "Stika '$name' ni v imeniku. Poskusi znova SAMO z osnovnim imenom."
+        if (top.score < 80 || (cands.size > 1 && top.score < cands[1].score + 15 && top.score < 100))
+            return null to "Nisem prepričan, koga misliš: ${cands.joinToString("; ") { it.match.name }}. Ustno preveri in znova pokliči orodje z natančnim imenom."
+        return top.match to null
+    }
+
+    /**
+     * compose_message via 'sms': osnutek ostane na telefonu — nič se ne odpre in nič
+     * ne pošlje. Pošlje ga šele send_message po uporabnikovem ustnem »pošlji«, in to
+     * natanko to besedilo (model ga vmes ne more zamenjati).
+     */
+    private fun prepareSms(name: String, text: String): String {
+        val (picked, err) = pickContact(name)
+        val m = picked ?: return err!!
+        pendingDraft = Draft(m, text, System.currentTimeMillis())
+        AuditLog.append(service, "dejanje", "SMS osnutek -> ${m.name}: $text", "GREEN", "pripravljen, čaka na 'pošlji'")
+        return "SMS osnutek za »${m.name}« je pripravljen: »$text«. Sporočilo še NI poslano — uporabniku naglas preberi prejemnika in celotno besedilo ter vprašaj, ali naj pošlješ. Šele ko reče 'pošlji', pokliči send_message z recipient »${m.name}«; če želi popravek, znova pokliči compose_message."
+    }
+
+    /** send_message: pošlje pripravljeni SMS osnutek; izid orodja pove, kaj se je zares zgodilo. */
+    private fun sendMessageAsync(callId: String, claimed: String) {
+        val draft = pendingDraft
+        if (draft == null || System.currentTimeMillis() - draft.at > 5 * 60_000) {
+            result(callId, "Ni pripravljenega SMS osnutka (ali je potekel) — najprej pokliči compose_message z via 'sms', preberi prejemnika in besedilo ter počakaj na 'pošlji'.")
+            return
+        }
+        val early: String? = when {
+            claimed.isBlank() -> "Manjka prejemnik (recipient) — navedi ime NATANKO tako, kot ga je vrnil compose_message."
+            !namesMatch(claimed, draft.match.name) -> {
+                AuditLog.append(service, "dejanje", "SMS -> ${draft.match.name} (zahtevan: $claimed)", "RED", "USTAVLJENO: neujemanje prejemnika")
+                "USTAVLJENO: pripravljeni osnutek je za »${draft.match.name}«, NE za »$claimed«. Nič NI poslano — znova pokliči compose_message s pravim stikom."
+            }
+            !SmsSender.hasPermission(service) ->
+                "Dovoljenje za pošiljanje SMS ni podeljeno — SMS NI poslan. Povej uporabniku, naj v nastavitvah Sopotnika pritisne gumb za dovoljenja in dovoli SMS, nato naj znova reče 'pošlji'."
+            else -> null
+        }
+        if (early != null) {
+            Log.i("Sopotnik", "orodje send_message($claimed) -> $early")
+            result(callId, early)
+            return
+        }
+        SmsSender.send(service, draft.match.number, draft.text) { r ->
+            handler.post {
+                val out = when (r) {
+                    is SmsSender.Result.Sent -> {
+                        pendingDraft = null
+                        AuditLog.append(service, "dejanje", "SMS -> ${draft.match.name}: ${draft.text}", "YELLOW", "ustno potrjeno, poslano (live)")
+                        "SMS poslan prejemniku »${draft.match.name}«."
+                    }
+                    is SmsSender.Result.Failed -> {
+                        AuditLog.append(service, "dejanje", "SMS -> ${draft.match.name}: ${draft.text}", "YELLOW", "pošiljanje ni uspelo: ${r.reason}")
+                        "SMS NI poslan — ${r.reason}. Povej uporabniku točno to; osnutek ostaja, na ponovni 'pošlji' poskusim znova."
+                    }
+                    is SmsSender.Result.Timeout -> {
+                        pendingDraft = null
+                        AuditLog.append(service, "dejanje", "SMS -> ${draft.match.name}: ${draft.text}", "YELLOW", "brez potrditve omrežja v 20 s")
+                        "Omrežje v 20 sekundah NI potrdilo pošiljanja — SMS za »${draft.match.name}« je morda šel, morda ne. Povej uporabniku, naj preveri v Sporočilih; osnutek sem zavrgel, da ne pride do dvojnega pošiljanja."
+                    }
+                }
+                Log.i("Sopotnik", "orodje send_message($claimed) -> $out")
+                result(callId, out)
+            }
+        }
+    }
+
     private fun result(callId: String, output: String) {
         agent.sendJson(JSONObject().put("t", "rt_action_result").put("callId", callId).put("output", output))
     }
@@ -313,6 +380,11 @@ class LiveSession(
         if (name == "read_notifications") {
             touchActivity()
             readNotificationsAsync(callId)
+            return
+        }
+        if (name == "send_message") {
+            touchActivity()
+            sendMessageAsync(callId, args.optString("recipient"))
             return
         }
         val out: String = when (name) {
@@ -421,7 +493,8 @@ class LiveSession(
                 val entry = lastNotifs.getOrNull(idx)
                 when {
                     entry == null || !fresh -> "Najprej znova preberi obvestila z read_notifications."
-                    claimed.isNotBlank() && !namesMatch(claimed, entry.title) ->
+                    claimed.isBlank() -> "Manjka prejemnik (recipient) — navedi ime NATANKO tako, kot je v zadnjem seznamu obvestil. Nič ni odprto."
+                    !namesMatch(claimed, entry.title) ->
                         "USTAVLJENO: obvestilo številka ${idx + 1} pripada »${entry.title}« (${entry.app}), NE »$claimed«. Nič ni odprto — preveri seznam in izberi pravo številko."
                     NotifListener.open(entry.key) -> "Odprto na zaslonu telefona: ${entry.app} — ${entry.title}."
                     else -> "Tega obvestila ni mogoče odpreti — morda je medtem izginilo."
@@ -464,8 +537,11 @@ class LiveSession(
                 val name = args.optString("contact")
                 val text = args.optString("text")
                 val via = args.optString("via")
-                if (text.isBlank()) "Manjka besedilo sporočila."
-                else openOrCompose(name, via, text)
+                when {
+                    text.isBlank() -> "Manjka besedilo sporočila."
+                    via == "sms" -> prepareSms(name, text)
+                    else -> openOrCompose(name, via, text)
+                }
             }
 
             "end_conversation" -> {
@@ -477,7 +553,7 @@ class LiveSession(
         }
 
         Log.i("Sopotnik", "orodje $name($args) -> $out")
-        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message", "open_conversation")
+        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message", "open_conversation", "send_message")
         if (name !in selfAudited) {
             AuditLog.append(service, "dejanje", "$name ${args} (live)", "GREEN", out)
         }
