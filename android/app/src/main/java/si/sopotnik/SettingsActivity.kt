@@ -81,6 +81,11 @@ class SettingsActivity : Activity() {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
 
+        findViewById<Button>(R.id.btn_a11y).setOnClickListener {
+            // HyperOS / Android 13+: za nameščen APK prej Podatki o aplikaciji → ⋮ → Dovoli omejene nastavitve
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
         findViewById<Button>(R.id.btn_diag).setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("🩺 Diagnostika obvestil")

@@ -77,6 +77,19 @@
         </receiver>
 
         <service
+            android:name=".ScreenReader"
+            android:exported="true"
+            android:label="Sopotnik — branje zaslona"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service" />
+        </service>
+
+        <service
             android:name=".NotifListener"
             android:exported="false"
             android:label="Sopotnik — dostop do obvestil"

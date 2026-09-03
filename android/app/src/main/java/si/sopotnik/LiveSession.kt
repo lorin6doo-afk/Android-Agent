@@ -486,6 +486,37 @@ class LiveSession(
 
             "open_app" -> Actions.execute(service, Action.OpenApp(args.optString("name")))
 
+            "read_screen" -> when {
+                !ScreenReader.enabled(service) ->
+                    "Branje zaslona ni vklopljeno — povej uporabniku: Nastavitve Sopotnika → gumb »Branje zaslona (dostopnost)« → vklopi Sopotnik (na HyperOS prej Podatki o aplikaciji → ⋮ → Dovoli omejene nastavitve)."
+                ScreenReader.instance == null ->
+                    "Storitev za branje zaslona je vklopljena, a ni povezana — povej uporabniku, naj jo v nastavitvah dostopnosti izklopi in znova vklopi."
+                else -> {
+                    val d = ScreenReader.dump()
+                    AuditLog.append(service, "zaslon", "read_screen (live)", "GREEN", if (d == null) "ni zaslona" else "prebranih ${d.length} znakov")
+                    d ?: "Zaslona ni mogoče prebrati — telefon je zaklenjen ali pa odprta aplikacija vsebine ne razkriva."
+                }
+            }
+
+            "tap_item" -> {
+                val label = args.optString("label")
+                when {
+                    label.isBlank() -> "Manjka napis elementa (label)."
+                    !ScreenReader.enabled(service) -> "Branje zaslona ni vklopljeno (glej read_screen)."
+                    else -> {
+                        val r = ScreenReader.tap(label)
+                        AuditLog.append(service, "zaslon", "tap_item »$label« (live)", if (r.startsWith("USTAVLJENO")) "RED" else "GREEN", r.take(80))
+                        r
+                    }
+                }
+            }
+
+            "scroll_screen" ->
+                if (!ScreenReader.enabled(service)) "Branje zaslona ni vklopljeno (glej read_screen)."
+                else ScreenReader.scroll(args.optString("direction").ifBlank { "up" })
+
+            "go_back" -> if (ScreenReader.back()) "Nazaj." else "Nazaj ni mogoče (branje zaslona ni povezano)."
+
             "read_notification" -> {
                 val idx = args.optInt("number") - 1
                 val claimed = args.optString("recipient")
@@ -570,7 +601,7 @@ class LiveSession(
         }
 
         Log.i("Sopotnik", "orodje $name($args) -> $out")
-        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message", "open_conversation", "send_message", "read_notification")
+        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message", "open_conversation", "send_message", "read_notification", "read_screen", "tap_item")
         if (name !in selfAudited) {
             AuditLog.append(service, "dejanje", "$name ${args} (live)", "GREEN", out)
         }

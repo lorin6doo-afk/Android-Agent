@@ -12,6 +12,8 @@ import android.util.Log
  *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP --es q "Urša Zvezdica" si.sopotnik → test iskanja stikov
  *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP --es sms_to "+386..." --es sms_text "Test" si.sopotnik → pošlje pravi SMS (izid DEBUG_SMS)
  *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP --ei notif 1 si.sopotnik → celotna vsebina 1. obvestila (DEBUG_NOTIF)
+ *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP --ez screen true si.sopotnik → besedilo zaslona (DEBUG_SCREEN)
+ *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP --es tap "Napis" si.sopotnik / --es scroll up → tap / pomik (DEBUG_TAP / DEBUG_SCROLL)
  *   adb logcat -s Sopotnik:* -d
  */
 class DebugReceiver : BroadcastReceiver() {
@@ -22,6 +24,12 @@ class DebugReceiver : BroadcastReceiver() {
             SmsSender.send(ctx, smsTo, smsText) { r -> Log.i(NotifListener.TAG, "DEBUG_SMS -> $r") }
             return
         }
+        if (intent.getBooleanExtra("screen", false)) {
+            Log.i(NotifListener.TAG, "DEBUG_SCREEN enabled=${ScreenReader.enabled(ctx)} bound=${ScreenReader.instance != null}\n" + (ScreenReader.dump() ?: "(ni zaslona)"))
+            return
+        }
+        intent.getStringExtra("tap")?.let { Log.i(NotifListener.TAG, "DEBUG_TAP '$it' -> ${ScreenReader.tap(it)}"); return }
+        intent.getStringExtra("scroll")?.let { Log.i(NotifListener.TAG, "DEBUG_SCROLL $it -> ${ScreenReader.scroll(it)}"); return }
         val notifNo = intent.getIntExtra("notif", 0)
         if (notifNo > 0) {
             val list = NotifListener.snapshot()

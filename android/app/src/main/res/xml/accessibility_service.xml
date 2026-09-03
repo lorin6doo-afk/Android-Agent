@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Branje zaslona na zahtevo (read_screen / tap_item / scroll_screen). Brez gest, brez
+     spremljanja dogodkov — storitev se uporabi le, ko jo pokliče orodje. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/a11y_description"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagIncludeNotImportantViews|flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="200"
+    android:settingsActivity="si.sopotnik.SettingsActivity" />

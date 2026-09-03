@@ -121,6 +121,12 @@
             android:text="Prikaz nad drugimi aplikacijami (odpiranje zaslonov iz ozadja)" />
 
         <Button
+            android:id="@+id/btn_a11y"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Branje zaslona (dostopnost) — sporočila, ki jih ni več med obvestili" />
+
+        <Button
             android:id="@+id/btn_diag"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
