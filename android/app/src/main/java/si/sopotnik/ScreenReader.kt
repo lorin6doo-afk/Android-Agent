@@ -51,7 +51,7 @@ class ScreenReader : AccessibilityService() {
         }
 
         /** Vidno besedilo aktivnega okna od zgoraj navzdol (v pogovorih je najnovejše spodaj). */
-        fun dump(maxChars: Int = 2500): String? {
+        fun dump(maxChars: Int = 3000): String? {
             val svc = instance ?: return null
             val root = svc.rootInActiveWindow ?: return null
             val pkg = root.packageName?.toString().orEmpty()
@@ -60,7 +60,7 @@ class ScreenReader : AccessibilityService() {
                 pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
             }.getOrDefault(pkg)
             val lines = ArrayList<String>()
-            collect(root, lines, 0)
+            collect(root, lines, 0)  // vrne Boolean, tu ga ne rabimo
             val sb = StringBuilder("Zaslon: $app")
             root.window?.title?.toString()?.takeIf { it.isNotBlank() && it != app }?.let { sb.append(" — ").append(it) }
             sb.append('\n')
@@ -71,32 +71,41 @@ class ScreenReader : AccessibilityService() {
             return out
         }
 
-        private fun collect(n: AccessibilityNodeInfo, out: MutableList<String>, depth: Int) {
-            if (depth > 60 || !n.isVisibleToUser) return
+        private fun add(out: MutableList<String>, line: String) {
+            if (line.isNotBlank() && out.lastOrNull() != line) out.add(line)
+        }
+
+        /**
+         * Vrne true, če je iz tega poddrevesa kaj izpisal. Poleg lastnega besedila (text)
+         * zajame tudi opis (contentDescription): pri sporočilih v nekaterih klepetih je
+         * celotno besedilo mehurčka le opis VRSTICE, katere podpogledi svojega besedila
+         * nimajo — prav to je prej manjkalo (pošiljatelj in ura sta se zajela, telo pa ne).
+         */
+        private fun collect(n: AccessibilityNodeInfo, out: MutableList<String>, depth: Int): Boolean {
+            if (depth > 80 || !n.isVisibleToUser) return false
             if (n.isPassword) {
-                out.add("[skrito polje]")
-                return
+                add(out, "[skrito polje]")
+                return true
             }
             val t = n.text?.toString()?.trim().orEmpty()
             val d = n.contentDescription?.toString()?.trim().orEmpty()
-            val childCount = n.childCount
-            val shown = when {
-                t.isNotEmpty() -> t
-                d.isNotEmpty() && childCount == 0 -> d
-                else -> ""
+            var emitted = false
+            if (t.isNotEmpty()) {
+                add(out, if (n.isEditable) "[vnos] $t" else if (n.isClickable || n.isCheckable) "▸ $t" else t)
+                emitted = true
             }
-            if (shown.isNotEmpty()) {
-                val line = when {
-                    n.isEditable -> "[vnos] $shown"
-                    n.isClickable || n.isCheckable -> "▸ $shown"
-                    else -> shown
-                }
-                if (out.lastOrNull() != line) out.add(line)
+            // opis vrstice/mehurčka, ki NI enak že zajetemu besedilu (klepetalna sporočila);
+            // pri vsebinsko praznih ikonah z opisom (childCount == 0) ravno tako koristi
+            if (d.isNotEmpty() && d != t) {
+                add(out, if (n.isClickable) "▸ $d" else d)
+                emitted = true
             }
-            for (i in 0 until childCount) {
+            var childEmitted = false
+            for (i in 0 until n.childCount) {
                 val c = n.getChild(i) ?: continue
-                collect(c, out, depth + 1)
+                if (collect(c, out, depth + 1)) childEmitted = true
             }
+            return emitted || childEmitted
         }
 
         private fun findByLabel(root: AccessibilityNodeInfo, query: String): AccessibilityNodeInfo? {
