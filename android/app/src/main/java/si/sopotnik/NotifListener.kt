@@ -2,6 +2,7 @@ package si.sopotnik
 
 import android.app.ActivityOptions
 import android.app.Notification
+import android.app.Person
 import android.app.RemoteInput
 import android.content.ComponentName
 import android.content.Context
@@ -10,6 +11,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Parcelable
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -154,6 +156,100 @@ class NotifListener : NotificationListenerService() {
                         )
                     }
             }.getOrNull()
+        }
+
+        /** Poštni odjemalci v obvestilo dajo le izsek sporočila — model naj to pove, ne pa da »prebere« izsek kot celoto. */
+        private val MAIL_PKGS = setOf(
+            "com.google.android.gm", "com.microsoft.office.outlook", "com.samsung.android.email.provider",
+            "com.yahoo.mobile.client.android.mail", "ch.protonmail.android", "me.bluemail.mail",
+            "com.fsck.k9", "eu.faircode.email"
+        )
+
+        /**
+         * Celotna vsebina enega obvestila za glasno branje: pri pogovorih (MessagingStyle —
+         * WhatsApp, SMS, Telegram, Signal …) zadnja sporočila s pošiljatelji (in morebitna
+         * starejša), sicer razširjeno besedilo (BigText / vrstice Inbox sloga). Ničesar ne
+         * odpre. Omejeno na [maxChars], da TTS ne bere v nedogled.
+         */
+        @Suppress("DEPRECATION")
+        fun detail(key: String, maxChars: Int = 1500): String? {
+            val svc = instance ?: return null
+            val sbn = runCatching { svc.activeNotifications.firstOrNull { it.key == key } }.getOrNull() ?: return null
+            val e = sbn.notification.extras
+            val title = e.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+            val convTitle = e.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()?.takeIf { it.isNotBlank() }
+            val isGroup = e.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false)
+            val me = (e.getParcelable(Notification.EXTRA_MESSAGING_PERSON) as? Person)?.name?.toString()
+
+            val sb = StringBuilder()
+            sb.append(svc.appLabel(sbn.packageName)).append(" — ").append(convTitle ?: title)
+            if (isGroup) sb.append(" (skupina)")
+            sb.append(", ").append(ago(sbn.postTime))
+            if (replyAction(sbn) != null) sb.append(" [odgovor možen]")
+            sb.append('\n')
+
+            val msgs = parseMessages(e.getParcelableArray(Notification.EXTRA_MESSAGES))
+            if (msgs.isNotEmpty()) {
+                val hist = parseMessages(e.getParcelableArray(Notification.EXTRA_HISTORIC_MESSAGES))
+                if (hist.isNotEmpty()) {
+                    sb.append("Prej:\n")
+                    hist.takeLast(5).forEach { sb.append("- ").append(fmtMsg(it, me)).append('\n') }
+                    sb.append("Novo:\n")
+                }
+                msgs.forEach { sb.append("- ").append(fmtMsg(it, me)).append('\n') }
+            } else {
+                val lines = e.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
+                val big = e.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+                val text = e.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+                sb.append(
+                    when {
+                        !lines.isNullOrEmpty() -> lines.joinToString("\n") { "- $it" }
+                        !big.isNullOrBlank() -> big
+                        !text.isNullOrBlank() -> text
+                        else -> "(obvestilo nima besedila)"
+                    }
+                ).append('\n')
+                e.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()
+                    ?.takeIf { it.isNotBlank() && it != title }
+                    ?.let { sb.append('(').append(it).append(")\n") }
+            }
+            if (sbn.packageName in MAIL_PKGS)
+                sb.append("OPOMBA: e-poštno obvestilo vsebuje le izsek — celotnega sporočila prek obvestila ni mogoče prebrati.\n")
+
+            var out = sb.toString().trimEnd()
+            if (out.length > maxChars) out = out.take(maxChars).trimEnd() + " … (besedilo je daljše — skrajšano)"
+            return out
+        }
+
+        private data class Msg(val sender: String?, val text: String, val time: Long)
+
+        /** Bundli sporočil MessagingStyle (ključi kot v Notification.MessagingStyle.Message). */
+        @Suppress("DEPRECATION")
+        private fun parseMessages(arr: Array<Parcelable>?): List<Msg> {
+            if (arr == null) return emptyList()
+            return arr.mapNotNull { p ->
+                val b = p as? Bundle ?: return@mapNotNull null
+                val text = b.getCharSequence("text")?.toString() ?: return@mapNotNull null
+                val sender = (b.getParcelable("sender_person") as? Person)?.name?.toString()
+                    ?: b.getCharSequence("sender")?.toString()
+                Msg(sender, text, b.getLong("time", 0L))
+            }.sortedBy { it.time }
+        }
+
+        /** Pošiljatelj brez imena (ali enak uporabniku) je po pogodbi MessagingStyle uporabnik sam. */
+        private fun fmtMsg(m: Msg, me: String?): String {
+            val who = if (m.sender.isNullOrBlank() || (me != null && m.sender == me)) "Ti" else m.sender
+            return "$who: ${m.text}"
+        }
+
+        private fun ago(t: Long): String {
+            val min = ((System.currentTimeMillis() - t) / 60_000).coerceAtLeast(0)
+            return when {
+                min < 1 -> "pravkar"
+                min < 60 -> "pred $min min"
+                min < 24 * 60 -> "pred ${min / 60} h"
+                else -> "pred ${min / (24 * 60)} dnevi"
+            }
         }
 
         /** Odpre obvestilo na zaslonu — enako kot dotik obvestila (npr. pogovor v WhatsAppu). */

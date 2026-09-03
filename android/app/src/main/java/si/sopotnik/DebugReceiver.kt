@@ -11,6 +11,7 @@ import android.util.Log
  *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP si.sopotnik                    → stanje obvestil
  *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP --es q "Urša Zvezdica" si.sopotnik → test iskanja stikov
  *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP --es sms_to "+386..." --es sms_text "Test" si.sopotnik → pošlje pravi SMS (izid DEBUG_SMS)
+ *   adb shell am broadcast -a si.sopotnik.DEBUG_DUMP --ei notif 1 si.sopotnik → celotna vsebina 1. obvestila (DEBUG_NOTIF)
  *   adb logcat -s Sopotnik:* -d
  */
 class DebugReceiver : BroadcastReceiver() {
@@ -19,6 +20,13 @@ class DebugReceiver : BroadcastReceiver() {
         val smsText = intent.getStringExtra("sms_text")
         if (smsTo != null && smsText != null) {
             SmsSender.send(ctx, smsTo, smsText) { r -> Log.i(NotifListener.TAG, "DEBUG_SMS -> $r") }
+            return
+        }
+        val notifNo = intent.getIntExtra("notif", 0)
+        if (notifNo > 0) {
+            val list = NotifListener.snapshot()
+            val d = list?.getOrNull(notifNo - 1)?.let { NotifListener.detail(it.key) }
+            Log.i(NotifListener.TAG, "DEBUG_NOTIF $notifNo -> " + (d ?: "NI VNOSA (seznam: ${list?.size ?: "null"})"))
             return
         }
         val q = intent.getStringExtra("q")

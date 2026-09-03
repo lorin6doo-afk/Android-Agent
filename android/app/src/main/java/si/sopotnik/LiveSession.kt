@@ -486,6 +486,23 @@ class LiveSession(
 
             "open_app" -> Actions.execute(service, Action.OpenApp(args.optString("name")))
 
+            "read_notification" -> {
+                val idx = args.optInt("number") - 1
+                val claimed = args.optString("recipient")
+                val fresh = System.currentTimeMillis() - lastNotifsAt < 5 * 60_000
+                val entry = lastNotifs.getOrNull(idx)
+                when {
+                    entry == null || !fresh -> "Najprej znova preberi seznam z read_notifications."
+                    claimed.isNotBlank() && !namesMatch(claimed, entry.title) ->
+                        "POZOR: obvestilo številka ${idx + 1} pripada »${entry.title}« (${entry.app}), NE »$claimed«. Preveri seznam in izberi pravo številko."
+                    else -> {
+                        AuditLog.append(service, "obvestila", "prebrana vsebina -> ${entry.app}/${entry.title} (live)", "GREEN", "ok")
+                        NotifListener.detail(entry.key)
+                            ?: "Tega obvestila ni več — morda je medtem izginilo. Znova preberi seznam."
+                    }
+                }
+            }
+
             "open_notification" -> {
                 val idx = args.optInt("number") - 1
                 val claimed = args.optString("recipient")
@@ -553,7 +570,7 @@ class LiveSession(
         }
 
         Log.i("Sopotnik", "orodje $name($args) -> $out")
-        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message", "open_conversation", "send_message")
+        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message", "open_conversation", "send_message", "read_notification")
         if (name !in selfAudited) {
             AuditLog.append(service, "dejanje", "$name ${args} (live)", "GREEN", out)
         }
