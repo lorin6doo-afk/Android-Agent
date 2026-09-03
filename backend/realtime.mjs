@@ -19,6 +19,7 @@ const INSTRUCTIONS = [
   "KANAL SPOROČIL: »sporočilo«, »SMS«, »aplikacija sporočila« pomeni via:'sms'; WhatsApp/Viber/Telegram uporabi LE, če ga uporabnik izrecno omeni (Viber/Telegram osnutkov ne znaš — povej). Sredi pogovora kanala nikoli ne zamenjaj sam od sebe.",
   "POŠTENOST IZIDOV: NIKOLI ne trdi, da je nekaj odprto, pripravljeno ali poslano, če orodje tega ni izrecno potrdilo v svojem izidu — izid orodja povzemi dobesedno, vključno z morebitnim POZOR opozorilom (npr. da je Android blokiral odpiranje in naj uporabnik vklopi »Prikaz nad drugimi aplikacijami«). Če orodja za neko dejanje nimaš, povej naravnost: »tega orodja še nimam« — ne izmišljuj razlogov. Za »odpri pogovor/klepet z osebo X« uporabi open_conversation; open_notification le za obvestilo s seznama (z recipient).",
   "ZASLON: kadar sporočila ni (več) med obvestili — prebrano, izbrisano, starejše — ali uporabnik želi vsebino iz aplikacije ('odpri Talk in preberi zadnje sporočilo v skupini X', 'kaj mi je zadnje pisal X na WhatsAppu'): open_app(ime) → read_screen → tap_item(ime pogovora ali skupine, napis natanko iz izpisa) → read_screen → preberi zadnja sporočila (na dnu izpisa so najnovejša) in loči pošiljatelje; za starejša scroll_screen('up') in znova read_screen. Beri IZKLJUČNO to, kar je dobesedno v zadnjem izpisu read_screen — če besedila nekega sporočila v izpisu NI (vidiš le pošiljatelja in uro), reci točno 'besedila tega sporočila ne vidim' in ponudi scroll ali odpiranje v aplikaciji; vsebine NIKOLI ne ugibaj, ne izmišljuj in je ne 'popravljaj' po uporabnikovem ugibanju — če nečesa ne moreš potrditi iz izpisa, reci, da ne veš, in ne reci 'prav imaš' z izmišljenim popravkom. Nikoli ne trdi, da vsebine ne moreš prebrati, dokler read_screen nisi poklical. Če read_screen vrne, da branje zaslona ni vklopljeno, uporabniku povej točno, kje ga vklopi. Nikoli ne tapkaj gumbov za pošiljanje, brisanje, plačilo, klic ali potrditev — za pošiljanje so send_reply, compose_message in send_message. Ko končaš, lahko go_back.",
+  "ZNANJE IN SKLEPANJE: za karkoli, kar zahteva dejstva, splošno znanje, sklepanje, računanje, razlago, prevod ali nasvet — in za vse, česar ne veš zanesljivo — pokliči ask_brain in nato njegov odgovor zvesto povzemi naglas. Nikoli ne izmišljuj dejstev, imen, številk ali datumov; če ask_brain pove, da ne ve, to pošteno povej. Za trivialni klepet (pozdrav, kramljanje) ask_brain ni potreben.",
   "Če česa ne znaš narediti, to pošteno poveš.",
 ].join(" ");
 
@@ -34,6 +35,7 @@ const TOOLS = [
   { type: "function", name: "open_app", description: "Odpre nameščeno aplikacijo po imenu.", parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
   { type: "function", name: "end_conversation", description: "Konča glasovno sejo, ko se uporabnik poslovi ali reče stop.", parameters: { type: "object", properties: {} } },
   { type: "function", name: "get_weather", description: "Vrne trenutno vreme in napoved za danes/jutri za dani kraj.", parameters: { type: "object", properties: { city: { type: "string", description: "kraj, npr. Mozirje; izpusti za privzeti kraj" } } } },
+  { type: "function", name: "ask_brain", description: "Vpraša pametne možgane (močnejši model prek uporabnikove naročnine) za karkoli, kar zahteva znanje, dejstva, sklepanje, računanje, razlago, primerjavo ali nasvet — in za vse, česar ne veš zanesljivo iz pogovora ali podatkov naprave. Njihov odgovor nato zvesto povzemi naglas; NE izmišljuj dejstev sam. Za zahtevnejše vprašanje lahko prej na kratko rečeš 'trenutek'.", parameters: { type: "object", properties: { vprasanje: { type: "string", description: "celo vprašanje v slovenščini, po potrebi z dodatnim kontekstom iz pogovora" } }, required: ["vprasanje"] } },
   { type: "function", name: "read_notifications", description: "Prebere aktivna obvestila s telefona (WhatsApp, SMS, e-pošta ...). Vrne oštevilčen seznam s kratkim izsekom; za CELOTNO vsebino posameznega obvestila uporabi read_notification. Pri vnosih z [odgovor možen] lahko pošlješ odgovor s send_reply.", parameters: { type: "object", properties: {} } },
   { type: "function", name: "send_reply", description: "Pošlje odgovor na obvestilo iz zadnjega read_notifications (po njegovi številki). Uporabi šele po ustni potrditvi osnutka. Telefon preveri, da se recipient ujema z dejanskim lastnikom obvestila — ob neujemanju se pošiljanje ustavi.", parameters: { type: "object", properties: { number: { type: "integer", description: "številka obvestila iz zadnjega seznama" }, recipient: { type: "string", description: "ime prejemnika NATANKO tako, kot je zapisano v zadnjem seznamu obvestil" }, text: { type: "string", description: "besedilo odgovora" } }, required: ["number", "recipient", "text"] } },
   { type: "function", name: "compose_message", description: "Pripravi NOVO sporočilo za stik iz imenika (osebo, ki je NI v seznamu obvestil). via:'sms': telefon si osnutek le zapomni — NIČ še ne pošlje in nič ne odpre; ti nato naglas prebereš prejemnika in besedilo, po uporabnikovem 'pošlji' pa pokličeš send_message. via:'whatsapp': odpre WhatsApp s pripravljenim besedilom — tam Pošlji pritisne uporabnik sam (telefon ga ne more).", parameters: { type: "object", properties: { contact: { type: "string", description: "ime stika iz imenika" }, text: { type: "string", description: "besedilo sporočila NATANKO tako, kot ga je narekoval uporabnik" }, via: { type: "string", enum: ["sms", "whatsapp"], description: "kanal: 'sms' (tudi za 'sporočilo', 'aplikacija sporočila'), 'whatsapp' le če ga uporabnik izrecno omeni — če ni jasno, vprašaj" } }, required: ["contact", "text", "via"] } },
@@ -64,11 +66,12 @@ function upsample16to24(buf) {
 }
 
 export class RealtimeBridge {
-  constructor({ apiKey, model, voice, send, label }) {
+  constructor({ apiKey, model, voice, send, label, askBrain }) {
     this.apiKey = apiKey;
     this.model = model;
     this.voice = voice;
     this.send = send; // (obj) -> telefon
+    this.askBrain = askBrain ?? null; // (vprašanje) -> Promise<odgovor> (naročniški model)
     this.label = label ?? "rt";
     this.inputRate = 24000;
     this.ws = null;
@@ -203,6 +206,16 @@ export class RealtimeBridge {
           getWeather(args.city)
             .catch((e) => `Vremena ni mogoče pridobiti: ${e.message}`)
             .then((out) => this.toolResult(ev.call_id, out));
+        } else if (ev.name === "ask_brain") {
+          // pametni možgani na naročniškem modelu — teče na gatewayu, telefon ni potreben
+          const q = args.vprasanje ?? args.vprašanje ?? args.question ?? args.query ?? "";
+          if (!this.askBrain) {
+            this.toolResult(ev.call_id, "Pametni možgani niso na voljo.");
+          } else {
+            Promise.resolve(this.askBrain(q))
+              .then((out) => this.toolResult(ev.call_id, out))
+              .catch((e) => this.toolResult(ev.call_id, `Možgani trenutno niso dosegljivi: ${e.message}`));
+          }
         } else {
           this.send({ t: "rt_action", callId: ev.call_id, name: ev.name, args });
         }

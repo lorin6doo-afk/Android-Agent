@@ -25,12 +25,14 @@ if (existsSync(envFile)) {
 
 // dvigni ob vsaki vsebinski spremembi backenda — izpiše se ob zagonu, da je
 // na Macu na pogled jasno, katera koda teče (tail backend/gateway.log)
-const GW_VERSION = "0.3.15";
+const GW_VERSION = "0.3.16";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TOKEN = process.env.SOPOTNIK_TOKEN ?? "";
 const MODEL = process.env.SOPOTNIK_MODEL ?? "gpt-5.6-luna";
 const EFFORT = process.env.SOPOTNIK_EFFORT ?? "low";
+// Pametni možgani (ask_brain iz žive seje) — več sklepanja kot hitri obratni model.
+const BRAIN_EFFORT = process.env.SOPOTNIK_BRAIN_EFFORT ?? "medium";
 
 // »Sven Live« (realtime govor-v-govor) — zahteva OpenAI API ključ.
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
@@ -52,6 +54,13 @@ const SYSTEM = [
   `Vrstica ${MARKER} je rezervirana za prihodnjo rabo; ne uporabljaj je.`,
 ].join(" ");
 
+// Sistemsko navodilo za pametne možgane (ask_brain): odgovor sliši uporabnik prek Svena.
+const BRAIN_SYSTEM = [
+  "Ti si pametni del glasovnega pomočnika Sven (aplikacija Sopotnik). Tvoj odgovor bo Sven prebral naglas.",
+  "Odgovarjaj v slovenščini, kratko in po vsebini (praviloma do štiri stavke), naravno, brez markdowna, seznamov in emojijev.",
+  "Bodi točen. Če česa ne veš ali nisi prepričan, to naravnost povej — nikoli ne izmišljuj dejstev, imen, številk ali datumov.",
+].join(" ");
+
 const codex = new Codex();
 
 const safeEqual = (a, b) => {
@@ -71,6 +80,37 @@ wss.on("connection", (ws, req) => {
   let firstTurn = true;
   let busy = false;
   let rt = null;
+  // Nit pametnih možganov za to povezavo (ohranja kontekst med vprašanji ask_brain).
+  let brainThread = null;
+  let brainFirst = true;
+  const askBrain = async (question) => {
+    const q = String(question ?? "").trim();
+    if (!q) return "Vprašanje je bilo prazno.";
+    if (!brainThread) {
+      brainThread = codex.startThread({
+        sandboxMode: "read-only",
+        skipGitRepoCheck: true,
+        approvalPolicy: "never",
+        modelReasoningEffort: BRAIN_EFFORT,
+        ...(MODEL ? { model: MODEL } : {}),
+      });
+      brainFirst = true;
+    }
+    const input = brainFirst ? `${BRAIN_SYSTEM}\n\nVprašanje: ${q}` : q;
+    brainFirst = false;
+    const t0 = performance.now();
+    let full = "";
+    const { events } = await brainThread.runStreamed(input);
+    for await (const ev of events) {
+      if ((ev.type === "item.updated" || ev.type === "item.completed") && ev.item?.type === "agent_message") {
+        full = ev.item.text ?? full;
+      }
+      if (ev.type === "turn.failed") throw new Error(ev.error?.message ?? "možgani: obrat ni uspel");
+      if (ev.type === "error") throw new Error(ev.message);
+    }
+    console.log(`[${new Date().toISOString()}] [brain:${peer}] ${Math.round(performance.now() - t0)} ms -> ${full.slice(0, 80).replace(/\n/g, " ")}`);
+    return full.trim() || "Na to vprašanje nimam odgovora.";
+  };
 
   const send = (o) => {
     try { ws.send(JSON.stringify(o)); } catch { /* povezava je morda že zaprta */ }
@@ -101,7 +141,7 @@ wss.on("connection", (ws, req) => {
         return;
       }
       rt?.stop();
-      rt = new RealtimeBridge({ apiKey: OPENAI_KEY, model: RT_MODEL, voice: RT_VOICE, send, label: `live:${peer}` });
+      rt = new RealtimeBridge({ apiKey: OPENAI_KEY, model: RT_MODEL, voice: RT_VOICE, send, label: `live:${peer}`, askBrain });
       rt.start(Number(msg.rate) || 24000);
       return;
     }
