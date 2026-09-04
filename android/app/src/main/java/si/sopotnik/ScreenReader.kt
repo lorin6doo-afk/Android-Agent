@@ -57,7 +57,7 @@ class ScreenReader : AccessibilityService() {
         }
 
         /** Vidno besedilo aktivnega okna od zgoraj navzdol (v pogovorih je najnovejše spodaj). */
-        fun dump(maxChars: Int = 3000): String? {
+        fun dump(maxChars: Int = 6000): String? {
             val svc = instance ?: return null
             val root = svc.rootInActiveWindow ?: return null
             val pkg = root.packageName?.toString().orEmpty()
@@ -73,7 +73,7 @@ class ScreenReader : AccessibilityService() {
             if (lines.isEmpty()) sb.append("(na zaslonu ni berljivega besedila)")
             else lines.forEach { sb.append(it).append('\n') }
             var out = sb.toString().trimEnd()
-            if (out.length > maxChars) out = out.take(maxChars).trimEnd() + " … (zaslon ima še več besedila — skrajšano)"
+            if (out.length > maxChars) out = out.take(maxChars).trimEnd() + " … (izpis od vrha navzdol je predolg in je odrezan; za najnovejše se najprej pomakni na dno s scroll_screen 'dno')"
             return out
         }
 
@@ -237,12 +237,19 @@ class ScreenReader : AccessibilityService() {
             }
             walk(root, 0)
             val node = best ?: return "Na zaslonu ni pomičnega seznama."
-            val up = direction == "up"
-            val ok = node.performAction(
-                if (up) AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-            )
-            return if (ok) "Pomaknjeno ${if (up) "navzgor (starejše)" else "navzdol"}. Pokliči read_screen."
-            else "Pomik ni več mogoč — verjetno si na ${if (up) "začetku" else "koncu"}."
+            val d = direction.lowercase().trim()
+            val backward = d == "up" || d == "vrh" || d == "gor" || d == "navzgor"
+            val toEnd = d == "dno" || d == "vrh" || d == "konec"
+            val act = if (backward) AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            if (toEnd) {
+                var steps = 0
+                while (steps < 15 && node.performAction(act)) { steps++; try { Thread.sleep(120) } catch (_: InterruptedException) {} }
+                return if (steps == 0) "Že na ${if (backward) "vrhu" else "dnu"}. Pokliči read_screen."
+                else "Pomaknjeno do ${if (backward) "vrha" else "dna"} ($steps korakov). Pokliči read_screen — najnovejše je na koncu izpisa."
+            }
+            val ok = node.performAction(act)
+            return if (ok) "Pomaknjeno ${if (backward) "navzgor (starejše)" else "navzdol"}. Pokliči read_screen."
+            else "Pomik ni več mogoč — verjetno si na ${if (backward) "začetku" else "koncu"}."
         }
 
         fun back(): Boolean = instance?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK) == true
