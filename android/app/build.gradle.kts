@@ -11,8 +11,8 @@ android {
         applicationId = "si.sopotnik"
         minSdk = 31
         targetSdk = 35
-        versionCode = 25
-        versionName = "0.3.17-faza2"
+        versionCode = 26
+        versionName = "0.3.18-faza2"
     }
 
     signingConfigs {

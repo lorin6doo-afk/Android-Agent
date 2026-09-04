@@ -217,37 +217,45 @@ class ScreenReader : AccessibilityService() {
         }
 
         /** Pomik po največjem pomičnem seznamu: 'up' = proti starejšemu/začetku, 'down' = naprej. */
-        fun scroll(direction: String): String {
-            val svc = instance ?: return "Branje zaslona ni povezano."
-            val root = svc.rootInActiveWindow ?: return "Zaslon ni na voljo."
+        /** Največji viden pomični element v aktivnem oknu (vsakič sveže — sklic po pomiku zastara). */
+        private fun scrollable(): AccessibilityNodeInfo? {
+            val root = instance?.rootInActiveWindow ?: return null
             var best: AccessibilityNodeInfo? = null
             var bestArea = 0
             val r = Rect()
             fun walk(n: AccessibilityNodeInfo, depth: Int) {
-                if (depth > 60) return
+                if (depth > 80) return
                 if (n.isScrollable && n.isVisibleToUser) {
                     n.getBoundsInScreen(r)
                     val area = r.width() * r.height()
-                    if (area > bestArea) {
-                        bestArea = area
-                        best = n
-                    }
+                    if (area > bestArea) { bestArea = area; best = n }
                 }
                 for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
             }
             walk(root, 0)
-            val node = best ?: return "Na zaslonu ni pomičnega seznama."
+            return best
+        }
+
+        fun scroll(direction: String): String {
+            if (instance == null) return "Branje zaslona ni povezano."
             val d = direction.lowercase().trim()
             val backward = d == "up" || d == "vrh" || d == "gor" || d == "navzgor"
             val toEnd = d == "dno" || d == "vrh" || d == "konec"
             val act = if (backward) AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            if (scrollable() == null) return "Na zaslonu ni pomičnega seznama."
             if (toEnd) {
+                // sklic na element ob vsakem koraku poiščemo znova, sicer po prvem pomiku zastara
                 var steps = 0
-                while (steps < 15 && node.performAction(act)) { steps++; try { Thread.sleep(120) } catch (_: InterruptedException) {} }
+                while (steps < 30) {
+                    val node = scrollable() ?: break
+                    if (!node.performAction(act)) break
+                    steps++
+                    try { Thread.sleep(140) } catch (_: InterruptedException) {}
+                }
                 return if (steps == 0) "Že na ${if (backward) "vrhu" else "dnu"}. Pokliči read_screen."
                 else "Pomaknjeno do ${if (backward) "vrha" else "dna"} ($steps korakov). Pokliči read_screen — najnovejše je na koncu izpisa."
             }
-            val ok = node.performAction(act)
+            val ok = scrollable()?.performAction(act) == true
             return if (ok) "Pomaknjeno ${if (backward) "navzgor (starejše)" else "navzdol"}. Pokliči read_screen."
             else "Pomik ni več mogoč — verjetno si na ${if (backward) "začetku" else "koncu"}."
         }
