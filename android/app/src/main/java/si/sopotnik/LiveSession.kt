@@ -504,8 +504,28 @@ class LiveSession(
                     label.isBlank() -> "Manjka napis elementa (label)."
                     !ScreenReader.enabled(service) -> "Branje zaslona ni vklopljeno (glej read_screen)."
                     else -> {
-                        val r = ScreenReader.tap(label)
-                        AuditLog.append(service, "zaslon", "tap_item »$label« (live)", if (r.startsWith("USTAVLJENO")) "RED" else "GREEN", r.take(80))
+                        val confirmed = args.optBoolean("potrjeno", false)
+                        val r = ScreenReader.tap(label, confirmed)
+                        val tier = when {
+                            r.startsWith("USTAVLJENO") -> "RED"
+                            r.startsWith("ČAKAM") || confirmed -> "YELLOW"
+                            else -> "GREEN"
+                        }
+                        AuditLog.append(service, "zaslon", "tap_item »$label«${if (confirmed) " (potrjeno)" else ""} (live)", tier, r.take(80))
+                        r
+                    }
+                }
+            }
+
+            "type_text" -> {
+                val text = args.optString("besedilo").ifBlank { args.optString("text") }
+                val append = args.optString("nacin") == "dodaj"
+                when {
+                    text.isBlank() -> "Manjka besedilo (besedilo)."
+                    !ScreenReader.enabled(service) -> "Branje zaslona ni vklopljeno (glej read_screen)."
+                    else -> {
+                        val r = ScreenReader.typeText(text, append)
+                        AuditLog.append(service, "zaslon", "type_text (${text.length} zn.) (live)", "GREEN", r.take(80))
                         r
                     }
                 }
@@ -601,7 +621,7 @@ class LiveSession(
         }
 
         Log.i("Sopotnik", "orodje $name($args) -> $out")
-        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message", "open_conversation", "send_message", "read_notification", "read_screen", "tap_item")
+        val selfAudited = setOf("find_contact", "call_contact", "get_time", "end_conversation", "send_reply", "compose_message", "open_conversation", "send_message", "read_notification", "read_screen", "tap_item", "type_text")
         if (name !in selfAudited) {
             AuditLog.append(service, "dejanje", "$name ${args} (live)", "GREEN", out)
         }

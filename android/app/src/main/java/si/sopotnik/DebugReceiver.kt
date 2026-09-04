@@ -30,6 +30,8 @@ class DebugReceiver : BroadcastReceiver() {
         }
         intent.getStringExtra("tap")?.let { Log.i(NotifListener.TAG, "DEBUG_TAP '$it' -> ${ScreenReader.tap(it)}"); return }
         intent.getStringExtra("scroll")?.let { Log.i(NotifListener.TAG, "DEBUG_SCROLL $it -> ${ScreenReader.scroll(it)}"); return }
+        intent.getStringExtra("type")?.let { Log.i(NotifListener.TAG, "DEBUG_TYPE -> ${ScreenReader.typeText(it, false)}"); return }
+        intent.getStringExtra("tapc")?.let { Log.i(NotifListener.TAG, "DEBUG_TAPC '$it' -> ${ScreenReader.tap(it, confirmed = true)}"); return }
         val notifNo = intent.getIntExtra("notif", 0)
         if (notifNo > 0) {
             val list = NotifListener.snapshot()

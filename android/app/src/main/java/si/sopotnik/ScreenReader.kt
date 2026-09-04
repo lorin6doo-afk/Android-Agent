@@ -1,8 +1,11 @@
 package si.sopotnik
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.graphics.Rect
 import android.provider.Settings
 import android.util.Log
@@ -33,16 +36,19 @@ class ScreenReader : AccessibilityService() {
             return s.split(':').any { it.equals(full, true) || it.equals(short, true) }
         }
 
-        /** Napisi gumbov, ki jih tap_item NIKOLI ne pritisne (primerjava prek matchKey, brez šumnikov). */
-        private val FORBIDDEN = setOf(
-            "poslji", "send", "izbrisi", "delete", "odstrani", "remove", "placaj", "pay", "kupi", "buy",
-            "poklici", "call", "klic", "blokiraj", "block", "potrdi", "confirm", "objavi", "post", "share",
-            "deli", "prijavi", "report", "odjava", "logout", "zavrzi", "discard", "naroci", "order"
+        /** Nikoli, ne glede na potrditev: brisanje, plačila, naročila, klici, blokiranje, odjava. */
+        private val HARD_FORBIDDEN = setOf(
+            "izbrisi", "delete", "odstrani", "remove", "placaj", "pay", "kupi", "buy", "naroci", "order",
+            "poklici", "call", "klic", "blokiraj", "block", "prijavi", "report", "odjava", "logout",
+            "zavrzi", "discard"
         )
 
-        private fun forbidden(text: String): Boolean {
+        /** Le z izrecno ustno potrditvijo (tap_item potrjeno=true): pošiljanje, potrditev, objava. */
+        private val CONFIRM_REQUIRED = setOf("poslji", "send", "potrdi", "confirm", "objavi", "post", "share", "deli", "submit")
+
+        private fun inSet(text: String, set: Set<String>): Boolean {
             val k = Actions.matchKey(text)
-            return k in FORBIDDEN || k.split(' ').any { it in FORBIDDEN }
+            return k in set || k.split(' ').any { it in set }
         }
 
         private fun label(n: AccessibilityNodeInfo): String {
@@ -133,10 +139,12 @@ class ScreenReader : AccessibilityService() {
         }
 
         /** Tapne vidni element z danim napisom (oz. njegov najbližji klikljivi nadrejeni element). */
-        fun tap(query: String): String {
+        fun tap(query: String, confirmed: Boolean = false): String {
             val svc = instance ?: return "Branje zaslona ni povezano."
-            if (forbidden(query))
-                return "USTAVLJENO: gumba »$query« ne tapkam (pošiljanje, brisanje, plačilo, klic ali potrditev) — take stvari gredo prek namenskih orodij z ustno potrditvijo."
+            if (inSet(query, HARD_FORBIDDEN))
+                return "USTAVLJENO: gumba »$query« ne tapkam (brisanje, plačilo, naročilo, klic, blokiranje ali odjava) — tega Sven prek zaslona ne dela."
+            if (inSet(query, CONFIRM_REQUIRED) && !confirmed)
+                return "ČAKAM POTRDITEV: »$query« je gumb za pošiljanje/potrditev. Uporabniku preberi, kaj bo poslano, in šele po njegovem izrecnem 'pošlji' ali 'da' znova pokliči tap_item s potrjeno=true."
             val root = svc.rootInActiveWindow ?: return "Zaslon ni na voljo (zaklenjen ali prazen)."
             var n = findByLabel(root, query)
                 ?: return "Na zaslonu ni elementa »$query«. Pokliči read_screen in uporabi napis natanko tako, kot je izpisan."
@@ -147,11 +155,65 @@ class ScreenReader : AccessibilityService() {
                 hops++
             }
             if (!n.isClickable) return "Element »$found« ni klikljiv."
-            if (forbidden(found))
-                return "USTAVLJENO: element »$found« je gumb za pošiljanje/brisanje/plačilo/klic/potrditev — tega ne tapkam."
+            if (inSet(found, HARD_FORBIDDEN))
+                return "USTAVLJENO: element »$found« je gumb za brisanje/plačilo/klic/blokiranje — tega ne tapkam."
+            val sendLike = inSet(found, CONFIRM_REQUIRED)
+            if (sendLike && !confirmed)
+                return "ČAKAM POTRDITEV: element »$found« pošilja ali potrjuje — najprej ustna potrditev uporabnika, nato tap_item s potrjeno=true."
             val ok = n.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            return if (ok) "Tapnjeno: »$found«. Pokliči read_screen, da vidiš, kaj se je odprlo."
-            else "Tapa na »$found« ni bilo mogoče izvesti."
+            return when {
+                !ok -> "Tapa na »$found« ni bilo mogoče izvesti."
+                sendLike -> "Tapnjeno (potrjeno): »$found«. Pokliči read_screen in potrdi uporabniku le, če je res poslano."
+                else -> "Tapnjeno: »$found«. Pokliči read_screen, da vidiš, kaj se je odprlo."
+            }
+        }
+
+        /** Polje za vnos: fokusirano, sicer prvo vidno; gesla nikoli. */
+        private fun findEditable(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+            var focused: AccessibilityNodeInfo? = null
+            var first: AccessibilityNodeInfo? = null
+            fun walk(n: AccessibilityNodeInfo, depth: Int) {
+                if (depth > 80 || focused != null) return
+                if (n.isVisibleToUser && n.isEditable && !n.isPassword) {
+                    if (n.isFocused) { focused = n; return }
+                    if (first == null) first = n
+                }
+                for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
+            }
+            walk(root, 0)
+            return focused ?: first
+        }
+
+        /**
+         * Vpiše besedilo v polje za vnos — za pisanje v katerokoli aplikacijo. NIČ ne pošlje;
+         * pošiljanje je ločen, potrjen tap. Če polje ne podpira ACTION_SET_TEXT, rezerva prek
+         * odložišča + ACTION_PASTE.
+         */
+        fun typeText(text: String, append: Boolean): String {
+            val svc = instance ?: return "Branje zaslona ni povezano."
+            if (text.isBlank()) return "Manjka besedilo."
+            val root = svc.rootInActiveWindow ?: return "Zaslon ni na voljo (zaklenjen ali prazen)."
+            val target = findEditable(root)
+                ?: return "Na zaslonu ni polja za vnos — najprej odpri pogovor ali tapni polje/gumb za nov pogovor (tap_item), nato znova type_text."
+            val hint = target.hintText?.toString().orEmpty()
+            val raw = target.text?.toString().orEmpty()
+            val existing = if (raw == hint) "" else raw
+            val fieldName = hint.ifBlank { raw }.ifBlank { "za vnos" }
+            val finalText = if (append && existing.isNotBlank()) existing + text else text
+            if (!target.isFocused) target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            val args = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, finalText)
+            }
+            var ok = target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            var how = "vpisano"
+            if (!ok) {
+                svc.getSystemService(ClipboardManager::class.java)
+                    .setPrimaryClip(ClipData.newPlainText("Sopotnik", finalText))
+                ok = target.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                how = "prilepljeno"
+            }
+            if (!ok) return "Besedila ni bilo mogoče vpisati v polje »$fieldName« — aplikacija tega ne dovoli."
+            return "V polje »$fieldName« $how: »$finalText«. Nič še ni poslano — uporabniku preberi, kaj je vpisano; po njegovem 'pošlji' tapni gumb za pošiljanje s tap_item(potrjeno=true)."
         }
 
         /** Pomik po največjem pomičnem seznamu: 'up' = proti starejšemu/začetku, 'down' = naprej. */
