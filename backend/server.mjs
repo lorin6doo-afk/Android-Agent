@@ -11,6 +11,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RealtimeBridge } from "./realtime.mjs";
+import { vaultStatus } from "./vault.mjs";
 
 // Poverilnice iz backend/.env (okoljske spremenljivke imajo prednost).
 const envFile = join(dirname(fileURLToPath(import.meta.url)), ".env");
@@ -25,7 +26,7 @@ if (existsSync(envFile)) {
 
 // dvigni ob vsaki vsebinski spremembi backenda — izpiše se ob zagonu, da je
 // na Macu na pogled jasno, katera koda teče (tail backend/gateway.log)
-const GW_VERSION = "0.3.16";
+const GW_VERSION = "0.3.17";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const TOKEN = process.env.SOPOTNIK_TOKEN ?? "";
@@ -248,3 +249,8 @@ wss.on("close", () => clearInterval(heartbeat));
 
 console.log(`Sopotnik gateway v${GW_VERSION} posluša na vratih ${PORT} (model: ${MODEL || "privzeti"}, reasoning: ${EFFORT})`);
 console.log("Telefon nastavi na  ws://<tailscale-ime-naprave>:%d  z istim žetonom.", PORT);
+{
+  const vs = vaultStatus();
+  if (vs.ok) console.log(`Vault: ${vs.dir} — dostop OK (${vs.count} zapiskov)`);
+  else console.log(`Vault: ${vs.dir ?? "(ni)"} — ${vs.error}`);
+}
