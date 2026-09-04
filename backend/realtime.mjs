@@ -113,6 +113,7 @@ export class RealtimeBridge {
     this.inputRate = 24000;
     this.ws = null;
     this.closed = false;
+    this.pending = new Map(); // callId -> ime orodja (za forenzični izpis izida)
   }
 
   log(...a) {
@@ -185,6 +186,10 @@ export class RealtimeBridge {
   }
 
   toolResult(callId, output) {
+    const name = this.pending.get(callId) ?? "orodje";
+    this.pending.delete(callId);
+    // forenzika: točen izid orodja v dnevnik (skrajšan), da je vidljivo, kaj je Sven res dobil
+    this.log(`izid ${name}: ${String(output ?? "").replace(/\s+/g, " ").slice(0, 500)}`);
     this.rtSend({
       type: "conversation.item.create",
       item: { type: "function_call_output", call_id: callId, output: String(output ?? "ok") },
@@ -238,6 +243,7 @@ export class RealtimeBridge {
         let args = {};
         try { args = JSON.parse(ev.arguments ?? "{}"); } catch { /* pusti prazno */ }
         this.log(`orodje ${ev.name}(${ev.arguments ?? "{}"})`);
+        this.pending.set(ev.call_id, ev.name);
         if (ev.name === "get_weather") {
           // strežniško orodje — telefon ni potreben
           getWeather(args.city)
