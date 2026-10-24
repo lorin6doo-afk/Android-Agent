@@ -17,3 +17,6 @@ backend/.env
 
 # Ops kanal — lokalno stanje operaterja na Macu
 ops/*.local
+
+# Gateway dnevniki (lahko vsebujejo podatke o sejah)
+backend/*.log

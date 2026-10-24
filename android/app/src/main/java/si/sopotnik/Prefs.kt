@@ -48,6 +48,18 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("realtime_mode", false)
         set(v) = sp.edit().putBoolean("realtime_mode", v).apply()
 
+    /** Klici priljubljenih stikov ob ZAKLENJENEM telefonu. Privzeto IZKLOP; spremeni se le v nastavitvah. */
+    var callsWhenLocked: Boolean
+        get() = sp.getBoolean("calls_when_locked", false)
+        set(v) = sp.edit().putBoolean("calls_when_locked", v).apply()
+
+    /** Navigacija do izgovorjenega JAVNEGA cilja ob zaklenjenem telefonu (nikoli domov/služba). Privzeto IZKLOP. */
+    var navWhenLocked: Boolean
+        get() = sp.getBoolean("nav_when_locked", false)
+        set(v) = sp.edit().putBoolean("nav_when_locked", v).apply()
+
+    fun lockCfg() = LockCfg(callsWhenLocked, navWhenLocked, homeAddress, workAddress)
+
     // ---- Keystore šifriranje ----
 
     private fun key(): SecretKey {

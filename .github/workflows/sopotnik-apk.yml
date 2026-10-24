@@ -30,6 +30,9 @@ jobs:
         with:
           gradle-version: '8.14.3'
 
+      - name: Unit tests (LockPolicy, SafetyGate, contacts)
+        run: gradle -p android :app:testDebugUnitTest --no-daemon
+
       - name: Build debug APK
         run: gradle -p android :app:assembleDebug --no-daemon
 
@@ -48,5 +51,11 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add builds/sopotnik-debug.apk
           git diff --cached --quiet || git commit -m "ci: build Sopotnik APK [skip ci]"
-          git pull --rebase origin "${GITHUB_REF_NAME}" || true
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          # vmes je lahko prišel commit (npr. ops rezultati): rebase + push do 3x, sicer glasen neuspeh
+          for i in 1 2 3; do
+            if git pull --rebase origin "${GITHUB_REF_NAME}" && git push origin "HEAD:${GITHUB_REF_NAME}"; then exit 0; fi
+            git rebase --abort 2>/dev/null || true
+            sleep $((i * 5))
+          done
+          echo "::error::APK ni bil commitan na vejo (rebase/push ni uspel)"
+          exit 1

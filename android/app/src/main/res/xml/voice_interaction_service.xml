@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- POLNA imena razredov: sistem sestavi ComponentName(paket, ime).
+     supportsAssist mora biti dobesedno "true" (sistem ga bere z getAttributeBooleanValue).
+     supportsLaunchVoiceAssistFromKeyguard=false: brez gumba na zaklenjenem zaslonu. -->
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="si.sopotnik.assist.SvenSessionService"
+    android:recognitionService="si.sopotnik.assist.SvenRecognitionStub"
+    android:supportsAssist="true"
+    android:supportsLaunchVoiceAssistFromKeyguard="false"
+    android:supportsLocalInteraction="false" />

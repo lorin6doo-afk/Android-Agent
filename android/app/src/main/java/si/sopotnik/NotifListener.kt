@@ -25,6 +25,8 @@ data class NotifEntry(
     val text: String,
     val timeMs: Long,
     val canReply: Boolean,
+    /** Skupinski pogovor: [title] je ime SKUPINE (odgovor gre vsem v njej), ne pošiljatelja. */
+    val isGroup: Boolean = false,
 )
 
 /**
@@ -148,11 +150,12 @@ class NotifListener : NotificationListenerService() {
                         NotifEntry(
                             key = sbn.key,
                             app = svc.appLabel(sbn.packageName),
-                            title = e.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
+                            title = currentTitle(sbn),
                             text = (e.getCharSequence(Notification.EXTRA_BIG_TEXT)
                                 ?: e.getCharSequence(Notification.EXTRA_TEXT))?.toString().orEmpty(),
                             timeMs = sbn.postTime,
                             canReply = replyAction(sbn) != null,
+                            isGroup = e.getBoolean(Notification.EXTRA_IS_GROUP_CONVERSATION, false),
                         )
                     }
             }.getOrNull()
@@ -171,10 +174,34 @@ class NotifListener : NotificationListenerService() {
          * starejša), sicer razširjeno besedilo (BigText / vrstice Inbox sloga). Ničesar ne
          * odpre. Omejeno na [maxChars], da TTS ne bere v nedogled.
          */
+        /**
+         * Naslov za ujemanje prejemnika: pri pogovorih ime pogovora (skupine), sicer naslov
+         * obvestila. (WhatsApp skupina ima v EXTRA_TITLE »Skupina: Pošiljatelj« — to bi
+         * pošiljatelju omogočilo »odgovor«, ki ga v resnici dobi cela skupina.)
+         */
+        fun currentTitle(sbn: StatusBarNotification): String {
+            val e = sbn.notification.extras
+            val conv = e.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()?.takeIf { it.isNotBlank() }
+            return conv ?: e.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
+        }
+
+        /**
+         * Obvestilo po ključu — a le, če ima še vedno pričakovani naslov (aplikacija lahko
+         * obvestilo pod istim ključem medtem posodobi z drugim pošiljateljem).
+         */
+        private fun live(svc: NotifListener, key: String, expectTitle: String?): StatusBarNotification? {
+            val sbn = svc.activeNotifications.firstOrNull { it.key == key } ?: return null
+            if (expectTitle != null && currentTitle(sbn) != expectTitle) {
+                Log.w(TAG, "obvestilo se je vmes spremenilo (drug naslov) — zavrnjeno")
+                return null
+            }
+            return sbn
+        }
+
         @Suppress("DEPRECATION")
-        fun detail(key: String, maxChars: Int = 1500): String? {
+        fun detail(key: String, maxChars: Int = 1500, expectTitle: String? = null): String? {
             val svc = instance ?: return null
-            val sbn = runCatching { svc.activeNotifications.firstOrNull { it.key == key } }.getOrNull() ?: return null
+            val sbn = runCatching { live(svc, key, expectTitle) }.getOrNull() ?: return null
             val e = sbn.notification.extras
             val title = e.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
             val convTitle = e.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()?.takeIf { it.isNotBlank() }
@@ -217,7 +244,12 @@ class NotifListener : NotificationListenerService() {
                 sb.append("OPOMBA: e-poštno obvestilo vsebuje le izsek — celotnega sporočila prek obvestila ni mogoče prebrati.\n")
 
             var out = sb.toString().trimEnd()
-            if (out.length > maxChars) out = out.take(maxChars).trimEnd() + " … (besedilo je daljše — skrajšano)"
+            if (out.length > maxChars) {
+                // najnovejše je na KONCU — ohrani glavo (aplikacija, pogovor) in rep, izpusti starejše
+                val head = out.substringBefore('\n')
+                val tail = out.takeLast((maxChars - head.length - 40).coerceAtLeast(200))
+                out = "$head\n… (starejši del izpuščen)\n${tail.substringAfter('\n', tail)}"
+            }
             return out
         }
 
@@ -253,10 +285,10 @@ class NotifListener : NotificationListenerService() {
         }
 
         /** Odpre obvestilo na zaslonu — enako kot dotik obvestila (npr. pogovor v WhatsAppu). */
-        fun open(key: String): Boolean {
+        fun open(key: String, expectTitle: String? = null): Boolean {
             val svc = instance ?: return false
             return runCatching {
-                val sbn = svc.activeNotifications.firstOrNull { it.key == key } ?: return false
+                val sbn = live(svc, key, expectTitle) ?: return false
                 val pi = sbn.notification.contentIntent ?: return false
                 val opts = ActivityOptions.makeBasic()
                 if (android.os.Build.VERSION.SDK_INT >= 34) {
@@ -269,10 +301,10 @@ class NotifListener : NotificationListenerService() {
             }.getOrDefault(false)
         }
 
-        fun reply(key: String, text: String): Boolean {
+        fun reply(key: String, text: String, expectTitle: String? = null): Boolean {
             val svc = instance ?: return false
             return runCatching {
-                val sbn = svc.activeNotifications.firstOrNull { it.key == key } ?: return false
+                val sbn = live(svc, key, expectTitle) ?: return false
                 val action = replyAction(sbn) ?: return false
                 val remoteInputs = action.remoteInputs ?: return false
                 val intent = Intent()

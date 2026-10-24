@@ -15,6 +15,10 @@ ta datoteka služi kot enosmerni kanal: oblak jo spreminja s pushi, Mac jo bere.
 - Vse ugotovitve in surove izpise objavi v pogovor; ZADNJI stavek odgovora naj bo:
   »OPS <ID-ji> KONČANO: <enovrstični povzetek>« — oblačna seja ga prebere iz povzetka seje.
 - Po obdelavi nalog vedno znova zaženi stražarja (glej dno datoteke).
+- REPOZITORIJ JE JAVEN: v `ops/results/*.md` NE smejo priti imena stikov, telefonske številke,
+  vsebina obvestil ali sporočil z uporabnikovega telefona. Pred commitom jih zamenjaj z `<stik>`,
+  `<številka>`, `<vsebina>` (testni podatki s testnega telefona, ki jih je ustvaril operater, so dovoljeni).
+  Posnetkov zaslona nikoli ne commitaj.
 
 ## T1 — identifikacija USB naprav
 `adb devices -l`, nato za VSAKO napravo (`adb -s <serial>`):
@@ -202,6 +206,31 @@ PASS/FAIL presoja NI tvoja naloga — oceni jo oblačna seja iz surovega izpisa.
    b) `adb -s <testni> shell am force-stop si.sopotnik`; zaženi Sopotnik; prek DEBUG ni mogoče klicati orodij —
       zato samo preveri, da se aplikacija zažene brez sesutja po novem buildu (logcat -s Sopotnik:* -d | tail -20).
 4. ZADNJI stavek: »OPS T11 KONČANO: gateway v<verzija>; APK <verzija>; smsto <ok/ne>« (ali BLOKIRANO + razlog).
+
+## T12 — faza 3 (sistemski asistent, zaklenjen telefon): gateway 0.4.0 + APK 0.4.0 + testi na TESTNEM telefonu
+VRSTNI RED: najprej gateway (0.4.0 je združljiv s staro aplikacijo), šele nato APK (nova
+aplikacija potrebuje gateway 0.4.0 — sicer v Sven Live nobena potrditev ne uspe).
+1. Gateway: `cd backend && npm install --no-audit --no-fund && node test-lock.mjs && node test-gateway.mjs`
+   (oba morata končati z OK; test uporablja lasten začasen vault, pravega ne spreminja), nato
+   `launchctl kickstart -k gui/$UID/si.sopotnik.gateway` in `tail -3 backend/gateway.log` → mora pisati
+   v0.4.0. Če `test-gateway.mjs` ne uspe, gatewaya NE posodabljaj — v poročilo daj celoten izpis.
+2. Počakaj, da je v `builds/` APK **0.4.0-faza3** (`git pull` na ~30 s; preveri po namestitvi z dumpsys).
+3. Namesti ga na testni telefon (`adb -s <testni> install -r builds/sopotnik-debug.apk`) in preveri verzijo.
+4. Poženi `bash ops/t12-faza3.sh <serial-testnega-telefona> 1590 2>&1 | tee /tmp/t12.txt`.
+   Skripta za čas testa nastavi PIN 1590 in ga na koncu odstrani; zaklene/odklene telefon sama.
+   Če obvisi na odklepu (PIN zaslon), ga odkleni z `adb shell input text 1590` + ENTER in nadaljuj.
+5. Celoten izpis shrani v `ops/results/t12.md` (z datumom in serijsko), preveri, da v njem ni
+   osebnih podatkov (pravila zgoraj), in ga commitaj po izjemi (»ops: rezultati [skip ci]«, prej `git pull --rebase`).
+6. Posnetka `/tmp/t12-a5.png` in `/tmp/t12-a9.png` si OGLEJ (Read) in v poročilu opiši z besedami
+   (ali je Svenovo okno vidno čez zaklenjen zaslon, kaj se odpre ob dolgem pritisku gumba za vklop). Ne commitaj.
+7. G2 (kanarček za pametne možgane, NE uporabljaj .env): `echo "kanarcek-$(openssl rand -hex 4)" > /tmp/sopotnik-canary.txt`,
+   vrednost zapiši v poročilo. Test sam izvede uporabnik glasovno — ti le pripravi datoteko.
+8. Če je priklopljen tudi uporabnikov Xiaomi 14: na njem SAMO bralni ukazi —
+   `getprop ro.build.version.security_patch`, `getprop ro.miui.build.region`,
+   `cmd role get-role-holders --user 0 android.app.role.ASSISTANT`,
+   `settings get system long_press_power_key`, `settings get secure voice_recognition_service`.
+ZADNJI stavek: »OPS T12 KONČANO: APK <verzija>; gateway <verzija>; testi gatewaya <OK/NAPAKA>; izpis commitan«
+(ali BLOKIRANO + razlog). PASS/FAIL presoja ni tvoja naloga.
 
 ## Stražar (po vsaki obdelavi nalog ga znova zaženi)
 V ozadju (Bash, run_in_background):

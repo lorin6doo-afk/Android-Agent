@@ -11,8 +11,8 @@ android {
         applicationId = "si.sopotnik"
         minSdk = 31
         targetSdk = 35
-        versionCode = 26
-        versionName = "0.3.18-faza2"
+        versionCode = 27
+        versionName = "0.4.0-faza3"
     }
 
     signingConfigs {
@@ -41,8 +41,14 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        // JVM testi preverjajo čisto logiko; morebiten klic Android API naj ne sesuje testa
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("junit:junit:4.13.2")
 }

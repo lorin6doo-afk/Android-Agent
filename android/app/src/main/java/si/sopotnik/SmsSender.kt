@@ -40,7 +40,10 @@ object SmsSender {
         val app = ctx.applicationContext
         val sm = runCatching {
             val base = app.getSystemService(SmsManager::class.java)
-            val subId = SubscriptionManager.getDefaultSmsSubscriptionId()
+            // privzeta SIM za SMS; brez nje (dual-SIM »vprašaj vsakič«) privzeta SIM telefona —
+            // sicer bi sistem pokazal izbirnik SIM, ki ga voznik ne vidi
+            val subId = SubscriptionManager.getDefaultSmsSubscriptionId().takeIf { it != SubscriptionManager.INVALID_SUBSCRIPTION_ID }
+                ?: SubscriptionManager.getDefaultSubscriptionId()
             if (subId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) base.createForSubscriptionId(subId) else base
         }.getOrNull() ?: run { cb(Result.Failed("SMS storitev ni na voljo")); return }
 
@@ -101,6 +104,8 @@ object SmsSender {
         SmsManager.RESULT_ERROR_SHORT_CODE_NEVER_ALLOWED -> "pošiljanje na to številko ni dovoljeno"
         SmsManager.RESULT_NETWORK_REJECT -> "omrežje je sporočilo zavrnilo"
         SmsManager.RESULT_INVALID_SMS_FORMAT -> "neveljavna oblika sporočila"
+        32 -> "na telefonu ni izbrane privzete SIM kartice oz. aplikacije za SMS — v nastavitvah telefona (SIM kartice) izberi SIM za SMS"
+        SmsManager.RESULT_RADIO_NOT_AVAILABLE -> "mobilni radio ni na voljo"
         else -> "koda napake $code"
     }
 }

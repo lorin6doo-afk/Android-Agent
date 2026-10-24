@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.ScrollView
 import android.widget.TextView
@@ -28,16 +29,10 @@ class MainActivity : Activity(), SessionService.UiListener {
     private lateinit var micButton: Button
 
     private var service: SessionService? = null
-    private var pendingAutostart = false
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            service = (binder as SessionService.LocalBinder).service()
-            service?.uiListener = this@MainActivity
-            if (pendingAutostart) {
-                pendingAutostart = false
-                startSessionChecked()
-            }
+            service = (binder as SessionService.LocalBinder).service().also { it.addUiListener(this@MainActivity) }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -64,19 +59,15 @@ class MainActivity : Activity(), SessionService.UiListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
+        // Seje NE zaganja noben extra (aktivnost je izvožena — tuja aplikacija bi sicer lahko
+        // odprla mikrofon). Ploščica gre prek neizvožene TileLaunchActivity.
         bindService(Intent(this, SessionService::class.java), connection, Context.BIND_AUTO_CREATE)
-        if (intent?.getBooleanExtra("autostart", false) == true) pendingAutostart = true
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        if (intent.getBooleanExtra("autostart", false)) startSessionChecked()
     }
 
     override fun onResume() {
         super.onResume()
         // osveži napis stanja (npr. po preklopu Sven Live v nastavitvah)
-        service?.let { it.uiListener = this }
+        service?.addUiListener(this)
         // po vklopu dostopa do obvestil HyperOS storitve ne poveže vedno sam
         NotifListener.ensureBound(this)
         if (!notifWarned) {
@@ -91,7 +82,7 @@ class MainActivity : Activity(), SessionService.UiListener {
     }
 
     override fun onDestroy() {
-        service?.uiListener = null
+        service?.removeUiListener(this)
         handler.removeCallbacksAndMessages(null)
         runCatching { unbindService(connection) }
         super.onDestroy()
@@ -123,6 +114,9 @@ class MainActivity : Activity(), SessionService.UiListener {
 
     override fun onSessionState(state: SessionState, label: String) {
         statusText.text = label
+        // med sejo zaslon ne sme ugasniti: ugasnjen zaslon = zaklep = nova seja brez konteksta in omejena orodja
+        if (state != SessionState.IDLE) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         micButton.text = if (state == SessionState.IDLE) "🎤  Začni pogovor" else "■  Končaj"
         if (state == SessionState.IDLE) partialText.text = ""
     }

@@ -36,7 +36,9 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
 
     private var ws: WebSocket? = null
     private var ready = false
-    private var shuttingDown = false
+
+    /** Namerno zaprto (shutdown): pozna sporočila v vrsti se zavržejo in NE odprejo nove povezave. */
+    private var closed = false
     private var pendingTurn: String? = null
     private val rawQueue = mutableListOf<String>()
     private val pendingTimeout = Runnable {
@@ -48,6 +50,10 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
 
     val isReady: Boolean get() = ready
 
+    /** Protokol gatewaya iz »ready« (0.4.0+ = 2; starejši ga ne pošilja = 1). */
+    var gatewayProto = 1
+        private set
+
     /** Surovo sporočilo (Sven Live rt_* protokol); pred pripravljenostjo se uvrsti v čakalno
      *  vrsto. Zvočni paketki (rt_audio) se med izpadom zavržejo — zastarel zvok je neuporaben,
      *  kopičenje pa bi ob obnovi poplavilo strežnik. */
@@ -55,6 +61,7 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
         handler.post {
             val s = obj.toString()
             when {
+                closed -> Unit
                 ready -> ws?.send(s)
                 obj.optString("t") == "rt_audio" -> Unit
                 else -> {
@@ -77,31 +84,50 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
     }
 
     fun connect() {
+        closed = false
         if (ws != null) return
         val url = prefs.backendUrl
         if (url.isEmpty() || !(url.startsWith("ws://") || url.startsWith("wss://"))) {
             handler.post { cb.onAgentError("Naslov backenda ni nastavljen (nastavitve).") }
             return
         }
-        val request = Request.Builder().url(url).build()
+        val request = try {
+            Request.Builder().url(url).build()
+        } catch (e: IllegalArgumentException) { // npr. »ws://« brez gostitelja
+            handler.post { cb.onAgentError("Naslov backenda ni veljaven (nastavitve).") }
+            return
+        }
+        // Povratni klici veljajo le za TRENUTNO povezavo: pozni onClosed stare povezave
+        // (po shutdown ali ponovnem povezovanju) ne sme podreti nove.
         ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 webSocket.send(
-                    JSONObject().put("t", "hello").put("token", prefs.token).put("lang", "sl").toString()
+                    // proto 2: aplikacija pozna zaklep (rt_start nosi »locked«) — gateway je zato fail-closed
+                    JSONObject().put("t", "hello").put("token", prefs.token).put("lang", "sl").put("proto", 2).toString()
                 )
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                handler.post { handleMessage(text) }
+                handler.post { if (webSocket === ws) handleMessage(text) }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 val detail = t.message?.take(160)?.let { " ($it)" } ?: ""
-                handler.post { onDisconnected("Povezava z backendom ni uspela$detail") }
+                handler.post { if (webSocket === ws) onDisconnected("Povezava z backendom ni uspela$detail") }
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                // strežnik zapira (npr. 4001 napačen žeton): zapri takoj, ne čakaj na časovno omejitev
+                webSocket.close(1000, null)
+                handler.post {
+                    if (webSocket === ws) {
+                        onDisconnected(if (code == 4001) "Backend je zavrnil žeton (preveri nastavitve)." else "Backend je prekinil povezavo.")
+                    }
+                }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                handler.post { onDisconnected("Backend je prekinil povezavo.") }
+                handler.post { if (webSocket === ws) onDisconnected("Backend je prekinil povezavo.") }
             }
         })
     }
@@ -111,6 +137,7 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
         when (msg.optString("t")) {
             "ready" -> {
                 ready = true
+                gatewayProto = msg.optInt("proto", 1)
                 cb.onAgentReady()
                 rawQueue.forEach { ws?.send(it) }
                 rawQueue.clear()
@@ -140,9 +167,6 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
         pendingTurn = null
         rawQueue.clear()
         handler.removeCallbacks(pendingTimeout)
-        val wasShutdown = shuttingDown
-        shuttingDown = false
-        if (wasShutdown) return
         if (!cb.onAgentDropped(message)) cb.onAgentError(message)
     }
 
@@ -150,9 +174,11 @@ class AgentClient(private val prefs: Prefs, private val cb: Callback) {
         if (ready) ws?.send(JSONObject().put("t", "reset").toString())
     }
 
+    /** Namerno zaprtje: povratni klici te povezave se ne obravnavajo več (ws = null). */
     fun shutdown() {
-        shuttingDown = true
+        closed = true
         handler.removeCallbacks(pendingTimeout)
+        rawQueue.clear()
         ws?.close(1000, "konec")
         ws = null
         ready = false

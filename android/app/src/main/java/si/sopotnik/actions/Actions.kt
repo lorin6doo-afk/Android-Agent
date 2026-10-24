@@ -10,9 +10,11 @@ import android.media.AudioManager
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.net.Uri
+import android.os.Bundle
 import android.provider.ContactsContract
 import android.provider.MediaStore
 import android.provider.Settings
+import android.telecom.TelecomManager
 import android.view.KeyEvent
 import si.sopotnik.IntentRouter
 import si.sopotnik.NotifListener
@@ -41,7 +43,7 @@ object Actions {
      * močno ujemanje (≥ 0.85) zagotovi spodnjo mejo 65. Popolna enakost 100,
      * +5 za točno enakost prvih besed; brez ujemanja 0.
      */
-    private fun scoreName(nameKey: String, queryKey: String): Int {
+    internal fun scoreName(nameKey: String, queryKey: String): Int {
         if (nameKey.isEmpty() || queryKey.isEmpty()) return 0
         if (nameKey == queryKey) return 100
         val nTok = nameKey.split(' ')
@@ -55,6 +57,7 @@ object Actions {
                     n == q -> 1.0
                     q.length >= 2 && n.startsWith(q) -> 0.85
                     n.length >= 3 && q.startsWith(n) -> 0.75
+                    sameStem(n, q) -> 0.9 // sklon: Uršo/Urši → Urša, Marka → Marko, Petra → Peter
                     else -> 0.0
                 }
                 if (w > best) best = w
@@ -69,49 +72,100 @@ object Actions {
         return score.coerceIn(0, 99)
     }
 
+    /** Ista osnova ob drugi končnici (slovenski skloni), vključno s polglasnikom (Peter → Petra). */
+    private fun sameStem(n: String, q: String): Boolean {
+        if (n.length >= 4 && q.length >= 4 && q.length <= n.length + 2 && n.dropLast(1) == q.dropLast(1)) return true
+        if (n.length >= 4 && q.length >= 4 && q.length <= n.length + 2 && q.startsWith(n.dropLast(1)) && q.length > n.length) return true
+        if (n.length == 3 && q.length == 3 && n.take(2) == q.take(2)) return true
+        if (n.length >= 5 && n[n.length - 2] == 'e') {
+            val fleeting = n.dropLast(2) + n.last()
+            if (q.startsWith(fleeting) && q.length <= fleeting.length + 2) return true
+        }
+        return false
+    }
+
     /**
      * Vrne do [limit] najboljših kandidatov (prag 60), determinirano razvrščenih
      * (točke, krajše ime, abeceda). Ob manjkajočem dovoljenju READ_CONTACTS
      * vrže SecurityException — klicatelj mora to sporočiti, ne »ni v imeniku«.
      */
-    fun resolveContacts(ctx: Context, query: String, limit: Int = 3): List<ScoredContact> {
+    fun resolveContacts(ctx: Context, query: String, limit: Int = 3, starredOnly: Boolean = false): List<ScoredContact> {
         val q = matchKey(query)
         if (q.isEmpty()) return emptyList()
-        val found = LinkedHashMap<String, ScoredContact>() // en vnos na ime stika
+        // poizvedba z znakom (»Urša*«): natančno ime z istim znakom ima prednost pred »Urša«
+        val rawQ = IntentRouter.normalize(query).trim().replace(Regex("\\s+"), " ")
+        val querySymbols = rawQ.any { !it.isLetterOrDigit() && it != ' ' }
+
+        class Row(val name: String, val number: String, val rank: Int)
+        val byContact = LinkedHashMap<Long, Row>() // EN vnos na stik (ne na ime): enako ime ≠ ista oseba
         ctx.contentResolver.query(
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
             arrayOf(
+                ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
                 ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                ContactsContract.CommonDataKinds.Phone.NUMBER
+                ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ContactsContract.CommonDataKinds.Phone.TYPE,
+                ContactsContract.CommonDataKinds.Phone.IS_SUPER_PRIMARY,
+                ContactsContract.CommonDataKinds.Phone.IS_PRIMARY,
             ),
-            null, null,
+            // ob zaklenjenem telefonu le priljubljeni (zvezdica) — tujec ne more preiskovati imenika
+            if (starredOnly) ContactsContract.Contacts.STARRED + " = 1" else null, null,
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
         )?.use { cur ->
             while (cur.moveToNext()) {
-                val name = cur.getString(0) ?: continue
-                val number = cur.getString(1) ?: continue
-                val score = scoreName(matchKey(name), q)
-                if (score >= 60 && found[name] == null) found[name] = ScoredContact(ContactMatch(name, number), score)
+                val id = cur.getLong(0)
+                val name = cur.getString(1) ?: continue
+                val number = cur.getString(2) ?: continue
+                // privzeta številka > primarna > mobilna > ostale (stacionarna, služba …)
+                val rank = when {
+                    cur.getInt(4) != 0 -> 4
+                    cur.getInt(5) != 0 -> 3
+                    cur.getInt(3) == ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE -> 2
+                    else -> 1
+                }
+                val prev = byContact[id]
+                if (prev == null || rank > prev.rank) byContact[id] = Row(name, number, rank)
             }
         }
-        return found.values
+        return byContact.values.mapNotNull { r ->
+            var score = scoreName(matchKey(r.name), q)
+            if (score < 60) return@mapNotNull null
+            if (score == 100 && querySymbols && IntentRouter.normalize(r.name).trim().replace(Regex("\\s+"), " ") != rawQ) score = 97
+            ScoredContact(ContactMatch(r.name, r.number), score)
+        }
             .sortedWith(compareByDescending<ScoredContact> { it.score }.thenBy { it.match.name.length }.thenBy { it.match.name })
             .take(limit)
     }
 
+    /**
+     * Enoličen zadetek: natančno ime (100), če drugi ni prav tako natančen (»Ana« ob »Ana Novak«,
+     * »Urša*« ob »Urša« pri poizvedbi z zvezdico); sicer ≥ 80 in vsaj 15 točk pred drugim.
+     * Dva natančna zadetka (enako ime, ali »Urša« proti »Urša*« brez znaka) NISTA enolična.
+     */
+    fun unique(cands: List<ScoredContact>): ScoredContact? {
+        val top = cands.firstOrNull() ?: return null
+        val second = cands.getOrNull(1)
+        if (top.score == 100) return top.takeIf { second == null || second.score < 100 }
+        return top.takeIf { it.score >= 80 && (second == null || second.score + 15 <= it.score) }
+    }
+
     /** Samozavesten posamični zadetek (≥ 80) — za klasični klicni tok. */
     fun resolveContact(ctx: Context, query: String): ContactMatch? =
-        runCatching { resolveContacts(ctx, query, limit = 1) }.getOrDefault(emptyList())
-            .firstOrNull()?.takeIf { it.score >= 80 }?.match
+        unique(runCatching { resolveContacts(ctx, query) }.getOrDefault(emptyList()))?.match
 
     fun execute(ctx: Context, action: Action, resolved: ContactMatch? = null): String = try {
         when (action) {
             is Action.Call -> {
                 val c = resolved ?: error("kontakt ni razrešen")
-                ctx.startActivity(
-                    Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(c.number)))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
+                val uri = Uri.fromParts("tel", c.number, null)
+                // TelecomManager.placeCall ne zažene aktivnosti — deluje tudi iz ozadja in ob
+                // zaklenjenem telefonu (ACTION_CALL bi Android/HyperOS tam lahko tiho blokiral).
+                val viaTelecom = runCatching {
+                    ctx.getSystemService(TelecomManager::class.java).placeCall(uri, Bundle())
+                }.isSuccess
+                if (!viaTelecom) {
+                    ctx.startActivity(Intent(Intent.ACTION_CALL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
                 "Kličem ${c.name}."
             }
 

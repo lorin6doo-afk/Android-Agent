@@ -1,0 +1,39 @@
+name: Sopotnik backend
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'backend/**'
+      - 'android/app/src/main/java/si/sopotnik/LockPolicy.kt'
+      - '.github/workflows/sopotnik-backend.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install
+        working-directory: backend
+        run: npm install --no-audit --no-fund
+
+      - name: Syntax
+        working-directory: backend
+        run: for f in *.mjs; do node --check "$f"; done
+
+      - name: Lock policy consistency (gateway vs LockPolicy.kt)
+        working-directory: backend
+        run: node test-lock.mjs
+
+      - name: Gateway end-to-end (fake Realtime)
+        working-directory: backend
+        run: node test-gateway.mjs

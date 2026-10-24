@@ -36,27 +36,79 @@ class ScreenReader : AccessibilityService() {
             return s.split(':').any { it.equals(full, true) || it.equals(short, true) }
         }
 
-        /** Nikoli, ne glede na potrditev: brisanje, plačila, naročila, klici, blokiranje, odjava. */
-        private val HARD_FORBIDDEN = setOf(
-            "izbrisi", "delete", "odstrani", "remove", "placaj", "pay", "kupi", "buy", "naroci", "order",
-            "poklici", "call", "klic", "blokiraj", "block", "prijavi", "report", "odjava", "logout",
-            "zavrzi", "discard"
+        /**
+         * Nikoli, ne glede na potrditev: brisanje, plačila, nakupi, naročila, klici, blokiranje,
+         * prijava zlorabe, odjava, ponastavitev. Primerja se vsako besedo napisa (brez šumnikov):
+         * WORDS natančno, PREFIX kot začetek besede (sklanjatve: »Izbriši za vse«, »Plačilo«,
+         * »Pokliči«), zloženke so naštete izrecno (»Videoklic«, »PayPal«). Podnizov sredi besede
+         * NE iščemo — sicer bi bil blokiran pogovor z »Ana Jaklič« ali zapisek »Nakupovalni seznam«.
+         */
+        private val HARD_WORDS = setOf(
+            "prijavi", "report", "order", "buy", "kupi", "kupite", "nakup", "purchase", "checkout",
+            "naroci", "narocite", "subscribe", "unsubscribe", "zavrzi", "discard", "reset", "format",
+            "clear", "money", "denar", "pay", "call"
+        )
+        private val HARD_PREFIX = listOf(
+            "izbris", "zbris", "brisi", "brisanj", "pobris", "odstran", "remov", "uninstall", "odinstal", "delet",
+            "placaj", "placil", "placat", "placam", "doplac", "payment", "kupit", "kupim", "narocil",
+            "poklic", "klic", "calling", "blokir", "odblokir", "block", "unblock",
+            "odjav", "logout", "signout", "pocisti", "izprazni", "ponastav", "nakaz", "transfer",
+            "videoklic", "glasovniklic", "videocall", "voicecall", "paypal", "gpay", "googlepay", "applepay"
         )
 
-        /** Le z izrecno ustno potrditvijo (tap_item potrjeno=true): pošiljanje, potrditev, objava. */
-        private val CONFIRM_REQUIRED = setOf("poslji", "send", "potrdi", "confirm", "objavi", "post", "share", "deli", "submit")
+        /** Predmet + dejanje (»Prekliči naročnino«, »Complete payment«); sam navigacijski napis (»Naročnine«) ostane dovoljen. */
+        private val HARD_OBJECT = listOf("narocnin", "subscription", "placil", "payment")
+        private val HARD_ACTION = listOf(
+            "oddaj", "potrd", "zakljuc", "dokonc", "preklic", "zacni", "izvedi", "opravi", "podaljs",
+            "complete", "make", "authoriz", "submit", "confirm", "cancel", "start", "place", "proceed", "continue", "renew"
+        )
 
-        private fun inSet(text: String, set: Set<String>): Boolean {
-            val k = Actions.matchKey(text)
-            return k in set || k.split(' ').any { it in set }
+        /** Zavihek »Klici« / »Zgodovina klicev« (s c, ne č) je navigacija, ne klic — preverimo pred odstranitvijo šumnikov. */
+        private val CALL_TAB_WORDS = setOf("klici", "klicev", "klice")
+
+        /** Le z izrecno ustno potrditvijo (tap_item potrjeno=true): pošiljanje, potrditev, objava, sprejem. */
+        private val CONFIRM_WORDS = setOf("send", "post", "share", "deli", "submit", "ok", "accept", "yes", "da")
+        private val CONFIRM_PREFIX = listOf("poslj", "posil", "potrd", "confirm", "objav", "oddaj", "sprejm", "publish", "delit")
+
+        private fun words(text: String): List<String> = Actions.matchKey(text).split(' ').filter { it.isNotEmpty() }
+
+        internal fun isHardForbidden(text: String): Boolean {
+            // izvirne besede (s šumniki): »klici« (zavihek) ≠ »kliči« (dejanje)
+            val raw = text.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+            val w = words(text)
+            val joined = w.joinToString("")
+            val rule = w.withIndex().any { (i, t) ->
+                val tab = raw.getOrNull(i) in CALL_TAB_WORDS && raw.size == w.size
+                !tab && (t in HARD_WORDS || HARD_PREFIX.any { t.startsWith(it) })
+            }
+            val objAction = w.any { t -> HARD_OBJECT.any { t.startsWith(it) } } && w.any { t -> HARD_ACTION.any { t.startsWith(it) } }
+            return rule || objAction || joined == "signout" || joined == "logout" || joined == "videoklic" || joined == "glasovniklic"
         }
+
+        /** Paket aktivnega okna (ali je spredaj še Svenovo sejno okno). */
+        fun activePackage(): String? = runCatching { instance?.rootInActiveWindow?.packageName?.toString() }.getOrNull()
+
+        /** Napis za tap brez oznak izpisa read_screen (»[L] «, »[D] «, »▸ «, »[vnos] «). */
+        fun cleanLabel(raw: String): String =
+            raw.replace(Regex("^\\s*(?:(?:\\[(?:L|D|vnos|skrito polje)]|▸)\\s*)+"), "").trim()
+
+        internal fun needsConfirm(text: String): Boolean =
+            words(text).any { t -> t in CONFIRM_WORDS || CONFIRM_PREFIX.any { t.startsWith(it) } }
 
         private fun label(n: AccessibilityNodeInfo): String {
             val t = n.text?.toString()?.trim().orEmpty()
             return if (t.isNotEmpty()) t else n.contentDescription?.toString()?.trim().orEmpty()
         }
 
-        /** Vidno besedilo aktivnega okna od zgoraj navzdol (v pogovorih je najnovejše spodaj). */
+        /** Ena vrstica izpisa s položajem na zaslonu (za razvrstitev in stran mehurčka). */
+        private class Line(val text: String, val top: Int, val left: Int, val right: Int, val order: Int, val plain: Boolean)
+
+        /**
+         * Vidno besedilo aktivnega okna od ZGORAJ NAVZDOL po položaju na zaslonu (ne po vrstnem
+         * redu drevesa — ta se v seznamih po pomikanju lahko razlikuje). V pogovorih je
+         * najnovejše spodaj. Ozke vrstice brez gumba dobijo oznako strani: [D] desno (praviloma
+         * tvoja poslana sporočila), [L] levo (prejeta).
+         */
         fun dump(maxChars: Int = 6000): String? {
             val svc = instance ?: return null
             val root = svc.rootInActiveWindow ?: return null
@@ -65,8 +117,21 @@ class ScreenReader : AccessibilityService() {
                 val pm = svc.packageManager
                 pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
             }.getOrDefault(pkg)
+            val raw = ArrayList<Line>()
+            collect(root, raw, 0)
+            val screen = Rect().also { root.getBoundsInScreen(it) }
+            val width = screen.width().coerceAtLeast(1)
+            val sorted = raw.withIndex().sortedWith(compareBy({ it.value.top }, { it.value.left }, { it.index })).map { it.value }
             val lines = ArrayList<String>()
-            collect(root, lines, 0)  // vrne Boolean, tu ga ne rabimo
+            for (l in sorted) {
+                val w = l.right - l.left
+                val side = if (l.plain && w in 1 until (width * 0.8).toInt() && l.text.length > 1) {
+                    val center = (l.left + l.right) / 2 - screen.left
+                    if (center > width * 0.55) "[D] " else if (center < width * 0.45) "[L] " else ""
+                } else ""
+                val line = side + l.text
+                if (line.isNotBlank() && lines.lastOrNull() != line) lines.add(line)
+            }
             val sb = StringBuilder("Zaslon: $app")
             root.window?.title?.toString()?.takeIf { it.isNotBlank() && it != app }?.let { sb.append(" — ").append(it) }
             sb.append('\n')
@@ -77,8 +142,11 @@ class ScreenReader : AccessibilityService() {
             return out
         }
 
-        private fun add(out: MutableList<String>, line: String) {
-            if (line.isNotBlank() && out.lastOrNull() != line) out.add(line)
+        private fun add(out: MutableList<Line>, n: AccessibilityNodeInfo, line: String, plain: Boolean) {
+            if (line.isBlank()) return
+            val r = Rect()
+            n.getBoundsInScreen(r)
+            out.add(Line(line, r.top, r.left, r.right, out.size, plain))
         }
 
         /**
@@ -87,23 +155,24 @@ class ScreenReader : AccessibilityService() {
          * celotno besedilo mehurčka le opis VRSTICE, katere podpogledi svojega besedila
          * nimajo — prav to je prej manjkalo (pošiljatelj in ura sta se zajela, telo pa ne).
          */
-        private fun collect(n: AccessibilityNodeInfo, out: MutableList<String>, depth: Int): Boolean {
+        private fun collect(n: AccessibilityNodeInfo, out: MutableList<Line>, depth: Int): Boolean {
             if (depth > 80 || !n.isVisibleToUser) return false
             if (n.isPassword) {
-                add(out, "[skrito polje]")
+                add(out, n, "[skrito polje]", false)
                 return true
             }
             val t = n.text?.toString()?.trim().orEmpty()
             val d = n.contentDescription?.toString()?.trim().orEmpty()
             var emitted = false
             if (t.isNotEmpty()) {
-                add(out, if (n.isEditable) "[vnos] $t" else if (n.isClickable || n.isCheckable) "▸ $t" else t)
+                val clickable = n.isClickable || n.isCheckable
+                add(out, n, if (n.isEditable) "[vnos] $t" else if (clickable) "▸ $t" else t, !n.isEditable && !clickable)
                 emitted = true
             }
             // opis vrstice/mehurčka, ki NI enak že zajetemu besedilu (klepetalna sporočila);
             // pri vsebinsko praznih ikonah z opisom (childCount == 0) ravno tako koristi
             if (d.isNotEmpty() && d != t) {
-                add(out, if (n.isClickable) "▸ $d" else d)
+                add(out, n, if (n.isClickable) "▸ $d" else d, !n.isClickable)
                 emitted = true
             }
             var childEmitted = false
@@ -114,12 +183,23 @@ class ScreenReader : AccessibilityService() {
             return emitted || childEmitted
         }
 
-        private fun findByLabel(root: AccessibilityNodeInfo, query: String): AccessibilityNodeInfo? {
+        private sealed class Find {
+            class One(val node: AccessibilityNodeInfo) : Find()
+            class Many(val labels: List<String>) : Find()
+            object None : Find()
+        }
+
+        /**
+         * Natančen napis ima prednost. Sicer delno ujemanje le po CELIH besedah (vsaka beseda
+         * poizvedbe je beseda napisa ali začetek besede z vsaj 3 črkami) — »Ana« NE zadene
+         * »Ivana«. Več različnih delnih zadetkov = dvoumno (nič se ne tapne).
+         */
+        private fun findByLabel(root: AccessibilityNodeInfo, query: String): Find {
             val q = Actions.matchKey(query)
-            if (q.isEmpty()) return null
+            if (q.isEmpty()) return Find.None
             val qTok = q.split(' ')
             var exact: AccessibilityNodeInfo? = null
-            var partial: AccessibilityNodeInfo? = null
+            val partial = LinkedHashMap<String, AccessibilityNodeInfo>()
             fun walk(n: AccessibilityNodeInfo, depth: Int) {
                 if (depth > 60 || exact != null) return
                 if (n.isVisibleToUser) {
@@ -129,25 +209,37 @@ class ScreenReader : AccessibilityService() {
                             exact = n
                             return
                         }
-                        if (partial == null && qTok.all { k.contains(it) }) partial = n
+                        val kTok = k.split(' ')
+                        if (qTok.all { qt -> kTok.any { it == qt || (qt.length >= 3 && it.startsWith(qt)) } }) {
+                            partial.putIfAbsent(k, n)
+                        }
                     }
                 }
                 for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
             }
             walk(root, 0)
-            return exact ?: partial
+            exact?.let { return Find.One(it) }
+            return when (partial.size) {
+                0 -> Find.None
+                1 -> Find.One(partial.values.first())
+                else -> Find.Many(partial.values.map { label(it) }.take(5))
+            }
         }
 
         /** Tapne vidni element z danim napisom (oz. njegov najbližji klikljivi nadrejeni element). */
-        fun tap(query: String, confirmed: Boolean = false): String {
+        fun tap(rawQuery: String, confirmed: Boolean = false): String {
             val svc = instance ?: return "Branje zaslona ni povezano."
-            if (inSet(query, HARD_FORBIDDEN))
+            val query = cleanLabel(rawQuery)
+            if (isHardForbidden(query))
                 return "USTAVLJENO: gumba »$query« ne tapkam (brisanje, plačilo, naročilo, klic, blokiranje ali odjava) — tega Sven prek zaslona ne dela."
-            if (inSet(query, CONFIRM_REQUIRED) && !confirmed)
-                return "ČAKAM POTRDITEV: »$query« je gumb za pošiljanje/potrditev. Uporabniku preberi, kaj bo poslano, in šele po njegovem izrecnem 'pošlji' ali 'da' znova pokliči tap_item s potrjeno=true."
+            if (needsConfirm(query) && !confirmed)
+                return "ČAKAM POTRDITEV: »$query« je gumb za pošiljanje/potrditev. Uporabniku preberi, komu in kaj bo poslano, in šele po njegovem izrecnem 'pošlji' ali 'da' znova pokliči tap_item s potrjeno=true."
             val root = svc.rootInActiveWindow ?: return "Zaslon ni na voljo (zaklenjen ali prazen)."
-            var n = findByLabel(root, query)
-                ?: return "Na zaslonu ni elementa »$query«. Pokliči read_screen in uporabi napis natanko tako, kot je izpisan."
+            var n = when (val f = findByLabel(root, query)) {
+                is Find.One -> f.node
+                is Find.Many -> return "DVOUMNO: »$query« ustreza več elementom (${f.labels.joinToString("; ")}). Nič ni tapnjeno — uporabi napis natanko tako, kot je v izpisu read_screen."
+                Find.None -> return "Na zaslonu ni elementa »$query«. Pokliči read_screen in uporabi napis natanko tako, kot je izpisan."
+            }
             val found = label(n)
             var hops = 0
             while (!n.isClickable && hops < 8) {
@@ -155,9 +247,10 @@ class ScreenReader : AccessibilityService() {
                 hops++
             }
             if (!n.isClickable) return "Element »$found« ni klikljiv."
-            if (inSet(found, HARD_FORBIDDEN))
+            val own = label(n) // klikljivi nadrejeni element ima lahko svoj napis (npr. ikona »Izbriši«)
+            if (isHardForbidden(found) || isHardForbidden(own))
                 return "USTAVLJENO: element »$found« je gumb za brisanje/plačilo/klic/blokiranje — tega ne tapkam."
-            val sendLike = inSet(found, CONFIRM_REQUIRED)
+            val sendLike = needsConfirm(found) || needsConfirm(own)
             if (sendLike && !confirmed)
                 return "ČAKAM POTRDITEV: element »$found« pošilja ali potrjuje — najprej ustna potrditev uporabnika, nato tap_item s potrjeno=true."
             val ok = n.performAction(AccessibilityNodeInfo.ACTION_CLICK)
@@ -199,7 +292,11 @@ class ScreenReader : AccessibilityService() {
             val raw = target.text?.toString().orEmpty()
             val existing = if (raw == hint) "" else raw
             val fieldName = hint.ifBlank { raw }.ifBlank { "za vnos" }
-            val finalText = if (append && existing.isNotBlank()) existing + text else text
+            val finalText = when {
+                !append || existing.isBlank() -> text
+                existing.last().isWhitespace() -> existing + text
+                else -> "$existing $text"
+            }
             if (!target.isFocused) target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
             val args = Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, finalText)
@@ -207,13 +304,36 @@ class ScreenReader : AccessibilityService() {
             var ok = target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
             var how = "vpisano"
             if (!ok) {
-                svc.getSystemService(ClipboardManager::class.java)
-                    .setPrimaryClip(ClipData.newPlainText("Sopotnik", finalText))
+                // rezerva: odložišče + prilepi. Pri zamenjavi najprej označi vse (sicer bi se
+                // besedilo podvojilo), po prilepljenju odložišče povrni (besedilo ne sme ostati tam).
+                val cm = svc.getSystemService(ClipboardManager::class.java)
+                val previous = runCatching { cm.primaryClip }.getOrNull()
+                val pasteText = if (append && existing.isNotBlank()) (if (existing.last().isWhitespace()) text else " $text") else text
+                if (append) {
+                    val end = existing.length
+                    target.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
+                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, end)
+                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, end)
+                    })
+                } else if (existing.isNotEmpty()) {
+                    target.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
+                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, existing.length)
+                    })
+                }
+                cm.setPrimaryClip(ClipData.newPlainText("Sopotnik", pasteText))
                 ok = target.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                runCatching { if (previous != null) cm.setPrimaryClip(previous) else cm.clearPrimaryClip() }
                 how = "prilepljeno"
             }
             if (!ok) return "Besedila ni bilo mogoče vpisati v polje »$fieldName« — aplikacija tega ne dovoli."
-            return "V polje »$fieldName« $how: »$finalText«. Nič še ni poslano — uporabniku preberi, kaj je vpisano; po njegovem 'pošlji' tapni gumb za pošiljanje s tap_item(potrjeno=true)."
+            // izid pove, kar je v polju ZARES (ne, kar smo želeli vpisati)
+            target.refresh()
+            val now = target.text?.toString().orEmpty().takeIf { it != hint } ?: ""
+            if (now.isNotEmpty() && now.trim() != finalText.trim()) {
+                return "POZOR: v polju »$fieldName« je zdaj »$now« (ne natanko »$finalText«). Nič še ni poslano — uporabniku preberi, kaj je dejansko v polju, ali besedilo popravi s type_text (nacin zamenjaj)."
+            }
+            return "V polje »$fieldName« $how: »$finalText«. Nič še ni poslano — uporabniku preberi, kaj je vpisano in komu; po njegovem 'pošlji' tapni gumb za pošiljanje s tap_item(potrjeno=true)."
         }
 
         /** Pomik po največjem pomičnem seznamu: 'up' = proti starejšemu/začetku, 'down' = naprej. */
@@ -244,16 +364,22 @@ class ScreenReader : AccessibilityService() {
             val act = if (backward) AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD else AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
             if (scrollable() == null) return "Na zaslonu ni pomičnega seznama."
             if (toEnd) {
-                // sklic na element ob vsakem koraku poiščemo znova, sicer po prvem pomiku zastara
+                // sklic na element ob vsakem koraku poiščemo znova, sicer po prvem pomiku zastara.
+                // Kliči IZVEN glavne niti (LiveSession) — zanka s premori traja do nekaj sekund.
                 var steps = 0
+                var stuck = false
                 while (steps < 30) {
                     val node = scrollable() ?: break
-                    if (!node.performAction(act)) break
+                    if (!node.performAction(act)) { stuck = true; break }
                     steps++
                     try { Thread.sleep(140) } catch (_: InterruptedException) {}
                 }
-                return if (steps == 0) "Že na ${if (backward) "vrhu" else "dnu"}. Pokliči read_screen."
-                else "Pomaknjeno do ${if (backward) "vrha" else "dna"} ($steps korakov). Pokliči read_screen — najnovejše je na koncu izpisa."
+                val kje = if (backward) "vrha" else "dna"
+                return when {
+                    steps == 0 -> "Že na ${if (backward) "vrhu" else "dnu"}. Pokliči read_screen."
+                    stuck -> "Pomaknjeno do $kje ($steps korakov). Pokliči read_screen — najnovejše je na koncu izpisa."
+                    else -> "Pomaknjeno za $steps korakov, a $kje morda še NI — seznam je zelo dolg. Pokliči read_screen; po potrebi znova scroll_screen."
+                }
             }
             val ok = scrollable()?.performAction(act) == true
             return if (ok) "Pomaknjeno ${if (backward) "navzgor (starejše)" else "navzdol"}. Pokliči read_screen."

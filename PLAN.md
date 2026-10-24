@@ -1,6 +1,6 @@
 # Sopotnik — načrt in študija izvedljivosti
 
-> **Status: predlog za skupno razpravo** (v1, 28. 8. 2026). Nič od spodnjega še ni implementirano — ta dokument je podlaga, da se najprej uskladiva o arhitekturi, obsegu MVP in odprtih vprašanjih (razdelek 10).
+> **Status (24. 10. 2026):** faze 0–2 so izvedene in preizkušene na telefonu. Faza 3 (sistemski asistent, zaklenjen telefon) je implementirana v APK 0.4.0-faza3 in gatewayu 0.4.0 ter čaka na teste na napravi (T12 na testnem telefonu, M0–M14 na Xiaomi 14). Prvotni predlog (v1, 28. 8. 2026) je ohranjen spodaj, popravki iz raziskave faze 3 so vneseni sproti.
 
 ---
 
@@ -159,6 +159,7 @@ Od Androida 14 veljata **dve naloženi omejitvi**: (1) foreground service tipa `
 
 - **CompanionDeviceManager (priporočeno):** asociacija z avtomobilskim **klasičnim** Bluetoothom je podprta ([`AssociationRequest` + `BluetoothDeviceFilter`](https://developer.android.com/develop/connectivity/bluetooth/companion-device-pairing)); `CompanionDeviceService.onDeviceAppeared` se sproži ob priklopu tudi, če je bila aplikacija ubita. Dovoljenji `REQUEST_COMPANION_RUN_IN_BACKGROUND` in `REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND` omogočita zagon FGS (tip `connectedDevice`) iz ozadja. **Predvajanje zvoka (TTS pozdrav) je dovoljeno; mikrofon ni** (4.8). 🧪 zanesljivost/latenca `onDeviceAppeared` s klasičnim BT na realnem avtu.
 - **`ACTION_ACL_CONNECTED` broadcast:** še vedno izvzet iz omejitev implicitnih broadcastov (manifest receiver deluje; `BLUETOOTH_CONNECT`), a manj zanesljiv od CDM in z istimi mikrofonskimi omejitvami. Rezervna pot.
+- **Gumb za asistenta na slušalkah ali volanu (HFP `AT+BVRA`)** sistem pošlje kot `ACTION_VOICE_COMMAND` — to NI vloga asistenta, ampak navadna aktivnost (`VoiceCommandActivity`, faza 3). Polna pot za avto (`startVoiceRecognition` v 5 s, sicer slušalke javijo napako) pride v fazi 4.
 - **Realen UX v avtu:** ob priklopu se aplikacija zbudi, pripravi sejo in objavi trajno obvestilo; glasovno sejo nato odpre **gumb za asistenta na volanu / dolgi pritisk power** (gre nosilcu vloge asistenta, tudi z zaklenjenim zaslonom — 4.10) ali en dotik obvestila.
 
 ### 4.10 Vloga privzetega asistenta (`VoiceInteractionService`) — ✅ hrbtenica projekta
@@ -172,9 +173,20 @@ Uporabnik aplikacijo nastavi kot **privzetega digitalnega asistenta** (`RoleMana
 
 Cena: največji posamični implementacijski zalogaj (service + session + session UI + recognition plumbing) in 🧪 OEM posebnosti (Samsung side-key preusmerja na Bixby ipd.). Zato je v faznem planu to samostojna faza **pred** avtomobilsko.
 
+**Popravki iz raziskave faze 3 (AOSP A13/A16, oktober 2026):**
+- `recognitionService` je le obvezen stub (od A12 ne naredi ničesar); brez intent-filtra, da ga sistem nikoli ne izbere za prepoznavo govora.
+- Vloge ni mogoče zahtevati z dialogom (`requestable="false"`): uporabnik jo izbere v Nastavitve → Privzete aplikacije → Digitalni pomočnik (gumb v nastavitvah Sopotnika) ali prek adb `cmd role add-role-holder`.
+- Prek vloge gredo dolg pritisk gumba za vklop, poteza in `KEYCODE_ASSIST`; gumb na slušalkah NE (glej 4.9).
+- Vloga podeli app-op »Prikaz nad drugimi aplikacijami«, a le če je `SYSTEM_ALERT_WINDOW` v manifestu (od 0.4.0 je). BAL in mikrofon iz ozadja da tudi vezava storitve za dostopnost (ScreenReader) — vloga ni edina pot.
+- Xiaomi ima ločen zaviralec (»Druga dovoljenja«: prikaz na zaklenjenem zaslonu, odpiranje oken v ozadju; 10020/10021), neodvisen od Androidove vloge.
+- Android 13 brez varnostnega popravka 2025-05 ob prisilni ustavitvi aplikacije ponastavi vlogo (CVE-2025-26444); A16 ne.
+- Po ponovnem zagonu telefona Sven kot asistent deluje šele po prvem odklepu. »Hey Google« se z menjavo asistenta izklopi.
+
 ### 4.11 UI čez zaklenjen zaslon — ✅
 
 `Activity.setShowWhenLocked(true)` + `setTurnScreenOn(true)` zanesljivo prikaže sejo čez keyguard. Full-screen-intent obvestila so od Androida 14 omejena (dovoljenje ni samodejno) — nanje ne računamo.
+
+**Faza 3:** sejno okno asistenta (`TYPE_VOICE_INTERACTION`, plast nad zaklenjenim zaslonom) se nad keyguardom izriše samo, brez `showWhenLocked`. `showWhenLocked` imata le `UnlockActivity` (zahteva odklep) in `VoiceCommandActivity` (slušalke). `MainActivity` in nastavitve ostanejo za zaklenjenim zaslonom. Na zaklenjenem zaslonu okno ne kaže prepisa pogovora — le stanje in gumbe Odkleni/Odpri/Končaj.
 
 ### 4.12 STT za slovenščino — 🟡 🧪
 
@@ -234,7 +246,8 @@ Sistemski `AlwaysOnHotwordDetector` (DSP, varčen) je od Androida 12 rezerviran 
 | `AgentClient` | WebSocket na backend; pošlje transkript + minimalen kontekst (aktivna obvestila, stanje predvajanja …), sprejme `{say, actions[]}` s streamingom |
 | `ActionExecutor` | podmoduli: klici, mediji, navigacija, obvestila, sporočila, sistem |
 | `SafetyGate` | deterministična klasifikacija dejanj (tabela v razdelku 6) + glasovni potrditveni dialog; klasifikacije NE dela AI |
-| `AssistantService` | `VoiceInteractionService` + `VoiceInteractionSession` (vloga privzetega asistenta) — hrbtenica za mikrofon ob zaklenjenem zaslonu, sistemske geste in zagon dejanj iz ozadja (glej 4.10) |
+| `assist/` | `SvenVoiceService` (VIS), `SvenSessionService` + `SvenSession` (sejno okno, tanek UI nad `SessionService`), `SvenRecognitionStub`, `UnlockActivity`, `VoiceCommandActivity` (slušalke), `TileLaunchActivity` (ploščica brez vloge) — glej 4.10 |
+| `LockPolicy` | deterministična tabela, kaj sme Sven ob zaklenjenem telefonu (6.1); ista tabela na telefonu, gateway ima strožji seznam dovoljenih |
 | `TriggerModule` | Quick Settings ploščica, widget/bližnjica, dotik trajnega obvestila; Bluetooth-v-avtu prek CompanionDeviceManager (samo prebudi aplikacijo — mikrofon vedno prek asistentske seje ali dotika obvestila, glej 4.8/4.9) |
 | `NotifCenter` | `NotificationListenerService`: branje, predpomnjenje zadnjih obvestil, iskanje reply-akcij |
 | `AuditLog` | lokalna Room baza: čas, transkript, klasifikacija, izid; brez zvočnih posnetkov; izvoz samo ročno |
@@ -275,6 +288,20 @@ Dodatna pravila:
 - potrditveni odgovor (»da«, »pošlji«, »prekliči«) se prepoznava **lokalno** s kratko gramatiko, ne prek AI,
 - vsak izveden ukaz (in vsaka zavrnitev) gre v audit log,
 - rumeno stopnjo za klice bo mogoče v nastavitvah spustiti na zeleno (za avto), rdečih pravil ne bo mogoče izklopiti z glasom — samo v nastavitvah na odklenjenem telefonu.
+- **Potrditve preverja telefon, ne model (od 0.4.0):** v Sven Live se klic, SMS, odgovor na obvestilo in tap gumba za pošiljanje izvedejo le, če (1) je uporabnik PO pripravi dejanja spregovoril, (2) je prepis njegovega govora kratka nedvoumna pritrditev (`SafetyGate.parseConfirmation`: zanikanje ali odlog kjerkoli → ne; drugo ime ali daljša izjava → nejasno) in (3) je uporabnik prejemnika (celo ime) in besedilo pred tem slišal do konca — Svenov odgovor šteje šele, ko se je predvajanje izteklo brez prekinitve; potrditev se veže na prepis prav te izjave (id izjave), ne na zadnji prispeli prepis. Odgovor na obvestilo gre v dveh korakih (osnutek → potrditev → pošlji), SMS osnutek se porabi ob prvem pošiljanju (brez dvojnega pošiljanja). Shranjevanje zapiska zahteva potrditev, kadar je v pogovoru tuja vsebina (sporočila, zaslon, zapiski, možgani).
+
+### 6.1 Zaklenjen telefon (faza 3)
+
+Ker se seja lahko sproži čez zaklenjen zaslon — tudi ko telefon drži nekdo drug — velja ob zaklepu (`KeyguardManager.isDeviceLocked`) dodatna deterministična tabela. Neznano orodje = zahteva odklep.
+
+| Ob zaklenjenem telefonu | Orodja |
+|---|---|
+| dovoljeno | ura, vreme (le z izrecnim krajem), glasba in mediji, glasnost, svetilka, konec pogovora |
+| le s stikalom v nastavitvah (privzeto izklopljeno) | klic **priljubljenega** stika (le enolično ime, vsaj 3 črke, največ 3 iskanja); navigacija do izgovorjenega **javnega** cilja (nikoli domov, služba, sorodniki, shranjena naslova) |
+| zahteva odklep | obvestila in sporočila (branje, odgovor, SMS, odpiranje pogovorov), aplikacije, zapiski, možgani (ask_brain), klasični AI obrat |
+| prepovedano | branje in upravljanje zaslona (read_screen, tap_item, type_text, scroll_screen, go_back) |
+
+Med sejo na **odklenjenem** telefonu zaslon ne ugasne sam (največ 3 minute od zadnje aktivnosti), ker bi samodejni zaklep sredi pogovora pomenil nov pogovor brez konteksta. Dodatno: ob vsaki spremembi zaklepa gateway odpre **novo** Realtime sejo (kar je Sven slišal ali prebral ob odklenjenem telefonu, ob zaklenjenem ni dosegljivo — in obratno); zaklenjena seja ima trdo omejitev 4 minute; obvestilo s stanjem seje ima gumb »Končaj«, ki deluje brez odklepa. Gateway ima neodvisen seznam dovoljenih (fail-closed: aplikacija od 0.4.0 brez podatka o zaklepu = zaklenjeno; starejša aplikacija, ki seje čez zaklenjen zaslon ne more sprožiti, ostane pri dosedanjem vedenju). Pozor: Smart Lock (zaupanja vredna naprava ali kraj) šteje kot odklenjeno; brez zaklepa zaslona je telefon vedno »odklenjen«.
 
 ---
 
@@ -282,7 +309,8 @@ Dodatna pravila:
 
 - **Poverilnice:** ChatGPT/Codex OAuth živi samo na backendu (Codexova lastna shramba tokenov). Telefon ima le dolg naključen API token za backend, shranjen v Android Keystore / `EncryptedSharedPreferences`. ChatGPT gesla ne vidi in ne hrani nihče razen OpenAI-jeve prijavne strani.
 - **Prenos:** vse app ↔ backend prek Tailscale (WireGuard) ali TLS; brez golega HTTP.
-- **Podatki:** zvok se ne shranjuje nikjer; transkripti in vsebina obvestil se na backendu ne logirajo (le v RAM za sejo); audit log je samo na telefonu.
+- **Podatki:** zvok se ne shranjuje nikjer; transkripti in vsebina obvestil se na backendu ne logirajo (le v RAM za sejo); audit log je samo na telefonu. Od 0.4.0 tudi logcat in `gateway.log` beležita le ime orodja in vrsto izida (forenzika z vsebino samo izrecno: `SOPOTNIK_FORENSIC=1`), audit log pa ne hrani besedil sporočil.
+- **Pametni možgani (ask_brain)** tečejo v ločenem Codexu brez okolja gatewaya (ključi), v prazni mapi in z zavrnjenim branjem domače mape (razen `~/.codex`) — tuja vsebina v vprašanju (prompt-injection) tako ne doseže `.env`, SSH ključev ali vaulta.
 - **Dovoljenja:** zahtevajo se postopoma po fazah, vsako z razlago ob onboarding koraku:
 
 | Faza | Dovoljenje / poseben dostop | Zakaj |
@@ -291,6 +319,7 @@ Dodatna pravila:
 | 1 | `READ_CONTACTS`, `CALL_PHONE` | »pokliči X« |
 | 1 | dostop do obvestil (sistemska nastavitev) | nadzor glasbe prek `MediaController`; isti dostop v fazi 2 pokrije še branje obvestil |
 | 3 | vloga privzetega asistenta (`ROLE_ASSISTANT` — sistemska izbira, ne dovoljenje) | mikrofon ob zaklenjenem zaslonu, sistemske geste, dejanja iz ozadja |
+| 3 | `SYSTEM_ALERT_WINDOW` (»Prikaz nad drugimi aplikacijami«; podeli ga tudi vloga) in na Xiaomiju »Druga dovoljenja« | odpiranje pogovorov, navigacije in aplikacij iz ozadja |
 | 4 | `BLUETOOTH_CONNECT`, `REQUEST_COMPANION_RUN_IN_BACKGROUND`, `REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND` | samodejno prebujenje ob priklopu v avto |
 | 5 (opcijsko) | `SEND_SMS` (+ enkratni odklep »Dovoli omejene nastavitve«), `ACCESS_NOTIFICATION_POLICY` | SMS, »ne moti« |
 
@@ -333,11 +362,13 @@ Dodatna pravila:
 - WhatsApp (in drugi messengerji) odgovor prek notification reply akcije: AI sestavi osnutek → prebere naglas → 🟡 potrditev → pošlji; 🧪 test po aplikacijah,
 - robovi: obvestilo medtem izginilo / reply akcije ni → pomočnik jasno pove, kaj lahko in česa ne.
 
-### Faza 3 — sistemski asistent (hrbtenica za zaklenjen zaslon)
+### Faza 3 — sistemski asistent (hrbtenica za zaklenjen zaslon) — implementirano v 0.4.0, čaka na teste na napravi
 - `VoiceInteractionService` + `VoiceInteractionSession` (sejno okno čez keyguard) + onboarding za izbiro privzetega asistenta,
 - mikrofon ob zaklenjenem telefonu, sprožitev z dolgim pritiskom power / potezo / gumbom na slušalkah,
 - klic in navigacija iz ozadja (asistentski BAL privilegij), 🧪 preizkus OEM posebnosti na ciljnem telefonu,
 - barge-in (prekinitev TTS z govorom), če se izkaže izvedljivo brez odmeva prek zvočnika.
+
+**Stanje (24. 10. 2026):** izvedeno — `assist/` (VIS, sejno okno, odklep, slušalke, ploščica), politika zaklepa (6.1) na telefonu in gatewayu, deterministične potrditve, `TelecomManager.placeCall` (klic brez zagona aktivnosti), razdelek »Sistemski asistent« v nastavitvah, adb kljuke za avtomatske teste. Preverjeno brez naprave: Kotlin typecheck, JVM unit testi (`LockPolicyTest`, `SafetyGateTest`, `ContactScoreTest`), `backend/test-lock.mjs` in `backend/test-gateway.mjs` (gateway z lažnim Realtime strežnikom). Odprto: T12 na testnem telefonu (`ops/t12-faza3.sh`) in ročni testi M0–M14 na Xiaomi 14 — predvsem ali HyperOS 3 dolg pritisk gumba za vklop preda tujemu asistentu in ali je mikrofon ob zaklepu neutišan.
 
 ### Faza 4 — avto
 - CompanionDeviceManager asociacija z avtomobilskim Bluetoothom; ob priklopu: prebujenje, priprava seje, trajno obvestilo, glasovni pozdrav prek TTS,
@@ -365,6 +396,10 @@ Dodatna pravila:
 | 7 | **Churn Codex površin** (docs migracije, menjave modelov, limitov, eksperimentalne funkcije) | srednja | pripenjanje verzije CLI, regeneracija shem ob nadgradnji, integracijski smoke test |
 | 8 | **Latenca AI poti** (govor → odgovor) predolga za pogovorni občutek | srednja | streaming `say` delta → TTS začne ob prvem stavku; luna model; lokalna gramatika za pogoste ukaze |
 | 9 | **Backend nedosegljiv** (izpad doma, ni signala v avtu) | nizka | lokalni ukazi delujejo vedno; pomočnik jasno pove, da je »pametni del« offline |
+| 10 | **Xiaomi zaviralec** (»Druga dovoljenja« 10020/10021) blokira klic, navigacijo ali okno iz ozadja ne glede na Androidovo vlogo | srednja | gumb v nastavitvah; klic prek `placeCall`; orodja pošteno javijo možnost blokade; test A7/M7 |
+| 11 | **Vloga asistenta se ponastavi** (A13 ob prisilni ustavitvi — CVE-2025-26444, čiščenje MIUI, posodobitve Google) | srednja | status v nastavitvah; testna skripta vlogo po namestitvi znova dodeli; A16 popravljeno |
+| 12 | **Codex v ask_brain bere datoteke na Macu** (prompt-injection prek sporočil) | srednja | ločen Codex: brez okolja, prazna mapa, zavrnjena domača mapa; ob zaklepu ask_brain ni dovoljen; test G2 s kanarčkom v /tmp |
+| 13 | **Javen repozitorij**: objavljen APK, testni podpisni ključ z gesli in surovi rezultati testov | srednja | rezultati brez imen stikov; priporočilo: repozitorij nastaviti kot zasebnega in podpisni ključ premakniti v skrivnosti CI (odločitev lastnika) |
 
 ---
 

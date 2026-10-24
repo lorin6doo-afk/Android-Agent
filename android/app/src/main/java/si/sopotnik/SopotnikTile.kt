@@ -4,13 +4,16 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.TileService
+import si.sopotnik.assist.SvenVoiceService
+import si.sopotnik.assist.TileLaunchActivity
 
 class SopotnikTile : TileService() {
 
     override fun onClick() {
-        val intent = Intent(this, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            .putExtra("autostart", true)
+        // Sven je privzeti asistent: sejno okno (deluje tudi na zaklenjenem zaslonu, brez odklepa)
+        if (SvenVoiceService.show("tile")) return
+        // sicer: neizvožen trampolin zažene sejo in odpre aplikacijo
+        val intent = Intent(this, TileLaunchActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT >= 34) {
             startActivityAndCollapse(
                 PendingIntent.getActivity(

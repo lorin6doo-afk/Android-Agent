@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Sopotnik</string>
-    <string name="a11y_description">Svenu omogoča, da na tvojo glasovno zahtevo prebere vidno besedilo odprte aplikacije (npr. že prebrana sporočila) in odpre pogovor. Dela le na zahtevo, gesel ne bere, gumbov za pošiljanje, brisanje, plačilo ali klic ne pritiska.</string>
+    <string name="a11y_description">Svenu omogoča, da na tvojo glasovno zahtevo prebere vidno besedilo odprte aplikacije (npr. že prebrana sporočila), odpre pogovor in vpiše narekovano besedilo. Dela le na zahtevo in ne ob zaklenjenem telefonu. Gesel ne bere; gumbov za brisanje, plačilo ali klic nikoli ne pritiska; gumb za pošiljanje pritisne šele, ko ti prebere besedilo in prejemnika ter ga izrecno potrdiš z glasom.</string>
 </resources>

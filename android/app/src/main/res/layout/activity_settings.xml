@@ -98,6 +98,62 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            android:text="Sistemski asistent"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/txt_assistant"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="…"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btn_assistant"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Nastavi Svena kot privzetega digitalnega pomočnika" />
+
+        <Button
+            android:id="@+id/btn_miui_perms"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Xiaomi: druga dovoljenja (zaklenjen zaslon, okna v ozadju)" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Nato na Xiaomiju: Nastavitve → Dodatne nastavitve → Bližnjice gumbov → Zaženi digitalnega pomočnika → Pridrži gumb za vklop. Svena zaženeš z dolgim pritiskom (0,5 s), deluje tudi na zaklenjenem zaslonu. Po ponovnem zagonu telefona deluje šele po prvem odklepu. »Hey Google« se s tem izklopi."
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/txt_lock_warn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <Switch
+            android:id="@+id/sw_calls_locked"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Klici priljubljenih stikov (zvezdica) tudi ob zaklenjenem telefonu" />
+
+        <Switch
+            android:id="@+id/sw_nav_locked"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Navigacija do izgovorjenega javnega cilja ob zaklenjenem telefonu (nikoli domov ali v službo)" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
             android:text="Dovoljenja"
             android:textSize="16sp"
             android:textStyle="bold" />

@@ -94,21 +94,34 @@ export function readNote(title, maxChars = 4000) {
   }
   if (!best) return null;
   let c = readFileSync(best, "utf8");
-  if (c.length > maxChars) c = c.slice(0, maxChars) + " … (zapisek je daljši — skrajšano)";
+  if (c.length > maxChars) {
+    // shrani_zapisek dodaja NA KONEC — ohrani začetek in najnovejši del, izpusti sredino
+    const head = Math.floor(maxChars * 0.3);
+    c = c.slice(0, head) + "\n… (sredina zapiska izpuščena) …\n" + c.slice(c.length - (maxChars - head));
+  }
   return { title: basename(best, ".md"), content: c };
+}
+
+/** Obstoječ zapisek z NATANKO tem naslovom kjerkoli v vaultu (ali null). */
+function findExact(title) {
+  const q = norm(title);
+  if (!q) return null;
+  for (const p of listNotes()) if (norm(basename(p, ".md")) === q) return p;
+  return null;
 }
 
 export function saveNote(title, text) {
   if (!VAULT_DIR) { const e = new Error("vault ni nastavljen"); e.code = "NOVAULT"; throw e; }
   const safe = (String(title || "Zapisek").replace(/[/\\:*?"<>|]/g, "-").replace(/\s+/g, " ").trim().slice(0, 80)) || "Zapisek";
   const dir = join(VAULT_DIR, SVEN_SUBDIR);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const p = join(dir, safe + ".md");
+  // »dodaj v zapisek X«: če X že obstaja kjerkoli v vaultu, dopiši tja (sicer bi nastal dvojnik)
+  const p = findExact(safe) ?? join(dir, safe + ".md");
+  if (!existsSync(dir) && !existsSync(p)) mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
   const body = String(text ?? "").trim();
   if (existsSync(p)) {
     appendFileSync(p, `\n\n---\n_${stamp}_\n${body}\n`);
-    return { title: safe, path: relative(VAULT_DIR, p), mode: "dodano" };
+    return { title: basename(p, ".md"), path: relative(VAULT_DIR, p), mode: "dodano" };
   }
   writeFileSync(p, `# ${safe}\n\n_${stamp}_\n${body}\n`);
   return { title: safe, path: relative(VAULT_DIR, p), mode: "ustvarjeno" };

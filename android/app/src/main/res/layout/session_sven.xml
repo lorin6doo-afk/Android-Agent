@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sejno okno asistenta. Na zaklenjenem zaslonu NE kaže prepisa pogovora (SvenSession). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/s_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#66000000">
+
+    <LinearLayout
+        android:id="@+id/s_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@drawable/session_card"
+        android:clickable="true"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:alpha="0.7"
+            android:text="Sven"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/s_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Povezujem …"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/s_partial"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textSize="16sp"
+            android:textStyle="italic" />
+
+        <TextView
+            android:id="@+id/s_lines"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="end"
+            android:maxLines="8"
+            android:textSize="15sp" />
+
+        <TextView
+            android:id="@+id/s_lock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="🔒 Telefon je zaklenjen: Sven ne bere sporočil in obvestil in ne pošilja ničesar. Za to ga odkleni."
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="end"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/s_unlock"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Odkleni"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/s_open"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Odpri" />
+
+            <Button
+                android:id="@+id/s_end"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="Končaj" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

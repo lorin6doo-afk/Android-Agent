@@ -9,6 +9,11 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- »Prikaz nad drugimi aplikacijami«: odpiranje pogovorov iz ozadja (BAL). Brez deklaracije
+         stikala v nastavitvah ni mogoče vklopiti; vloga asistenta ta app-op dodeli sama. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- med sejo na odklenjenem telefonu zaslon ne ugasne sam (sicer zaklep prekine pogovor) -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <queries>
         <intent>
@@ -65,6 +70,71 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+
+        <!-- ===== Faza 3: sistemski asistent (privzeta digitalna pomočnica) =====
+             NOBENA komponenta ne dobi android:process: sejno okno in SessionService
+             morata biti v istem procesu (LocalBinder). -->
+        <service
+            android:name=".assist.SvenVoiceService"
+            android:exported="true"
+            android:label="Sven"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/voice_interaction_service" />
+        </service>
+
+        <service
+            android:name=".assist.SvenSessionService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <!-- Obvezna za vlogo asistenta; NAMERNO brez intent-filtra RecognitionService,
+             da je sistem nikoli ne izbere kot privzeto prepoznavo govora. -->
+        <service
+            android:name=".assist.SvenRecognitionStub"
+            android:exported="false" />
+
+        <activity
+            android:name=".assist.UnlockActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Sopotnik.Translucent"
+            android:turnScreenOn="true" />
+
+        <!-- Gumb za glasovni ukaz na BT slušalkah/volanu (HFP) in žične slušalke.
+             NAMERNO brez WEB_SEARCH: prestregli bi iskanja drugih aplikacij. -->
+        <activity
+            android:name=".assist.VoiceCommandActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Sopotnik.Translucent"
+            android:turnScreenOn="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.speech.action.VOICE_SEARCH_HANDS_FREE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Trampolin ploščice (ni izvožen): zažene sejo, kadar Sven ni privzeti asistent. -->
+        <activity
+            android:name=".assist.TileLaunchActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@style/Theme.Sopotnik.Translucent" />
 
         <!-- DUMP imajo shell/adb, navadne aplikacije ne — diag ukazi ostanejo adb-only -->
         <receiver
